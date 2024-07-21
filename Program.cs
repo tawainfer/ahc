@@ -25,12 +25,27 @@ public static class DeepCopy {
   }
 }
 
+public class Field {
+  private List<List<Seed>> _map = new();
+  
+  public List<List<Seed>> Map {get {return _map;}}
+
+  public Field(int n, List<Seed> seeds) {
+    for(int i = 0; i < n; i++) {
+      _map.Add(new List<Seed>());
+      for(int j = 0; j < n; j++) {
+        _map[i].Add(seeds[i * n + j]);
+      }
+    }
+  }
+}
+
 public class Seed {
   private int _id;
   private List<int> _evaluationItems;
 
   public int Id {get {return _id;}}
-  public List<int> EvaluationItems {get {return _evaluationItems;} }
+  public List<int> EvaluationItems {get {return _evaluationItems;}}
 
   public Seed(int id, List<int> evaluationItems) {
     _id = id;
@@ -42,18 +57,78 @@ public class Seed {
   }
 }
 
+public class Responser {
+  public List<Seed> Local(int n, Field field) {
+    List<Seed> res = new();
+    int id = 0;
+
+    for(int i = 0; i <= n - 1; i++) {
+      string[] u = ReadLine().Split();
+
+      for(int j = 0; j <= n - 2; j++) {
+        List<int> evaluationItems = new();
+        for(int k = 0; k < u[j].Length; k++) {
+          evaluationItems.Add((
+            u[j][k] == '0'
+            ? field.Map[i][j].EvaluationItems[k]
+            : field.Map[i][j + 1].EvaluationItems[k]
+          ));
+        }
+
+        res.Add(new Seed(id, evaluationItems));
+        id++;
+      }
+    }
+
+    for(int i = 0; i <= n - 2; i++) {
+      string[] v = ReadLine().Split();
+
+      for(int j = 0; j <= n - 1; j++) {
+        List<int> evaluationItems = new();
+        for(int k = 0; k < v[j].Length; k++) {
+          evaluationItems.Add((
+            v[j][k] == '0'
+            ? field.Map[i][j].EvaluationItems[k]
+            : field.Map[i + 1][j].EvaluationItems[k]
+          ));
+        }
+
+        res.Add(new Seed(id, evaluationItems));
+        id++;
+      }
+    }
+
+    return res;
+  }
+
+  public List<Seed> Production(int n) {
+    List<Seed> res = new();
+
+    for(int i = 0; i < n * (n - 1) * 2; i++) {
+      var ev = ReadLine().Split().Select(int.Parse).ToList();
+      res.Add(new Seed(i, ev));
+    }
+
+    return res;
+  }
+}
+
 public class Program {
   private int _n;
   private int _m;
   private int _t;
   private List<Seed> _seeds = new();
 
-  public void Operate() {
+  public void Operate(bool isTest = false) {
     for(int _ = 0; _ < _t; _++) {
       _seeds.Shuffle();
+      var field = new Field(_n, DeepCopy.Clone(_seeds));
+
+      if(isTest) WriteLine("[output start]");
+
       for(int i = 0; i < _n; i++) {
         for(int j = 0; j < _n; j++) {
-          Write($"{_seeds[i * _n + j].Id}");
+          Write($"{field.Map[i][j].Id}");
           if(j != _n - 1) {
             Write(" ");
           }
@@ -62,10 +137,12 @@ public class Program {
       }
       Out.Flush();
 
-      _seeds.Clear();
-      for(int i = 0; i < _n * (_n - 1) * 2; i++) {
-        var ev = ReadLine().Split().Select(int.Parse).ToList();
-        _seeds.Add(new Seed(i, ev));
+      if(isTest) WriteLine("[output end]");
+
+      if(isTest) {
+        _seeds = new Responser().Local(_n, DeepCopy.Clone(field));
+      } else {
+        _seeds = new Responser().Production(_n);
       }
     }
   }
@@ -84,7 +161,7 @@ public class Program {
       _seeds.Add(new Seed(i, ev));
     }
 
-    Operate();
+    Operate(true);
   }
 
   public static void Main(string[] args) {
