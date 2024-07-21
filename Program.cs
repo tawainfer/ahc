@@ -43,13 +43,16 @@ public class Field {
 public class Seed {
   private int _id;
   private List<int> _evaluationItems;
+  private int _evaluationSum;
 
   public int Id {get {return _id;}}
   public List<int> EvaluationItems {get {return _evaluationItems;}}
+  public int EvaluationSum {get {return _evaluationSum;}}
 
   public Seed(int id, List<int> evaluationItems) {
     _id = id;
     _evaluationItems = DeepCopy.Clone(evaluationItems);
+    _evaluationSum = _evaluationItems.Sum();
   }
 
   public override string ToString() {
@@ -121,11 +124,12 @@ public class Program {
 
   public void Operate(bool isTest = false) {
     for(int _ = 0; _ < _t; _++) {
-      _seeds.Shuffle();
+      // _seeds.Shuffle();
+      _seeds.Sort((seed1, seed2) => seed1.EvaluationSum - seed2.EvaluationSum);
+      // _seeds.Reverse();
       var field = new Field(_n, DeepCopy.Clone(_seeds));
 
       if(isTest) WriteLine("[output start]");
-
       for(int i = 0; i < _n; i++) {
         for(int j = 0; j < _n; j++) {
           Write($"{field.Map[i][j].Id}");
@@ -136,14 +140,10 @@ public class Program {
         WriteLine();
       }
       Out.Flush();
-
       if(isTest) WriteLine("[output end]");
 
-      if(isTest) {
-        _seeds = new Responser().Local(_n, DeepCopy.Clone(field));
-      } else {
-        _seeds = new Responser().Production(_n);
-      }
+      if(isTest) _seeds = new Responser().Local(_n, DeepCopy.Clone(field));
+      else _seeds = new Responser().Production(_n);
     }
   }
 
@@ -162,6 +162,7 @@ public class Program {
     }
 
     Operate(true);
+    // Operate();
   }
 
   public static void Main(string[] args) {
