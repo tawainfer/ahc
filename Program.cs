@@ -38,6 +38,58 @@ public class Field {
       }
     }
   }
+
+  public int PredictScore(int n) {
+    // List<Seed> seeds = new();
+    int res = 0;
+    // int id = 0;
+
+    for(int i = 0; i <= n - 1; i++) {
+      for(int j = 0; j <= n - 2; j++) {
+        // List<int> evaluationItems = new();
+        for(int k = 0; k < _map[i][j].EvaluationItems.Count; k++) {
+          // evaluationItems.Add((
+          //   u[j][k] == '0'
+          //   ? field.Map[i][j].EvaluationItems[k]
+          //   : field.Map[i][j + 1].EvaluationItems[k]
+          // ));
+          // evaluationItems.Add(
+          //   (field.Map[i][j].EvaluationItems[k]
+          //   + field.Map[i][j + 1].EvaluationItems[k]) / 2
+          // );
+          res += (_map[i][j].EvaluationItems[k]
+            + _map[i][j + 1].EvaluationItems[k]) / 2;
+        }
+
+        // seeds.Add(new Seed(id, evaluationItems));
+        // id++;
+      }
+    }
+
+    for(int i = 0; i <= n - 2; i++) {
+      for(int j = 0; j <= n - 1; j++) {
+        // List<int> evaluationItems = new();
+        for(int k = 0; k < _map[i][j].EvaluationItems.Count; k++) {
+          // evaluationItems.Add((
+          //   v[j][k] == '0'
+          //   ? _map[i][j].EvaluationItems[k]
+          //   : _map[i + 1][j].EvaluationItems[k]
+          // ));
+          // evaluationItems.Add(
+          //   (_map[i][j].EvaluationItems[k]
+          //   + _map[i + 1][j].EvaluationItems[k]) / 2
+          // );
+          res += (_map[i][j].EvaluationItems[k]
+            + _map[i + 1][j].EvaluationItems[k]) / 2;
+        }
+
+        // seeds.Add(new Seed(id, evaluationItems));
+        // id++;
+      }
+    }
+
+    return res;
+  }
 }
 
 public class Seed {
@@ -124,10 +176,27 @@ public class Program {
 
   public void Operate(bool isTest = false) {
     for(int _ = 0; _ < _t; _++) {
-      // _seeds.Shuffle();
       _seeds.Sort((seed1, seed2) => seed1.EvaluationSum - seed2.EvaluationSum);
-      // _seeds.Reverse();
-      var field = new Field(_n, DeepCopy.Clone(_seeds));
+      _seeds.Reverse();
+      while(_seeds.Count > _n * _n) {
+        _seeds.RemoveAt(_seeds.Count - 1);
+      }
+
+      var stopwatch = Stopwatch.StartNew();
+      var timeout = TimeSpan.FromMilliseconds(150);
+      Field field = new Field(_n, DeepCopy.Clone(_seeds));
+      int maxPredictScore = 0;
+
+      while(stopwatch.Elapsed <= timeout) {
+        _seeds.Shuffle();
+        var tmpField = new Field(_n, DeepCopy.Clone(_seeds));
+        int currentPredictScore = tmpField.PredictScore(_n);
+        if(currentPredictScore > maxPredictScore) {
+          // WriteLine($"up! {maxPredictScore} => {currentPredictScore}");
+          maxPredictScore = currentPredictScore;
+          field = DeepCopy.Clone(tmpField);
+        }
+      }
 
       if(isTest) WriteLine("[output start]");
       for(int i = 0; i < _n; i++) {
