@@ -44,8 +44,7 @@ public class Program
     private List<int> _y;
     private List<int> _a;
     private List<int> _b;
-    private int _cp = 0;
-    private int _epIdx = 0;
+    private List<string> _ans;
 
     public Stopwatch Stopwatch { get { return _stopwatch; } }
     public TimeSpan Timeout { get { return _timeout; } }
@@ -67,10 +66,13 @@ public class Program
         _a = new();
         _b = new();
         _g = new();
+        _ans = new();
+
+        Init();
         Solve();
     }
 
-    public void Solve()
+    public void Init()
     {
         var tmp = ReadLine()!.Split().Select(int.Parse).ToArray();
         (_n, _m, _t, _la, _lb) = (tmp[0], tmp[1], tmp[2], tmp[3], tmp[4]);
@@ -103,15 +105,20 @@ public class Program
         _b = new();
         for (int i = 0; i < _lb; i++) _b.Add(-1);
 
-        WriteLine(string.Join(' ', _a));
+        _ans.Add(string.Join(' ', _a));
+    }
 
+    public void Solve()
+    {
+
+        int cp = 0;
         foreach (int ep in _order)
         {
             List<bool> seen = new();
             for (int _ = 0; _ < _n; _++) seen.Add(false);
-            seen[_cp] = true;
+            seen[cp] = true;
             Queue<(int, List<int>)> q = new();
-            q.Enqueue((_cp, new() { _cp, }));
+            q.Enqueue((cp, new() { cp, }));
 
             List<int> confirmedRoot = new();
             while (q.Count >= 1)
@@ -136,10 +143,15 @@ public class Program
 
             for (int i = 1; i < confirmedRoot.Count; i++)
             {
-                WriteLine($"s {1} {_a.IndexOf(confirmedRoot[i])} {0}");
-                WriteLine($"m {confirmedRoot[i]}");
-                _cp = confirmedRoot[i];
+                _ans.Add($"s {1} {_a.IndexOf(confirmedRoot[i])} {0}");
+                _ans.Add($"m {confirmedRoot[i]}");
+                cp = confirmedRoot[i];
             }
+        }
+
+        foreach (string s in _ans)
+        {
+            WriteLine(s);
         }
     }
 }
