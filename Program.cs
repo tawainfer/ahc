@@ -50,7 +50,6 @@ public class Program
     private int _centralNode;
     private Dictionary<(int From, int To), List<int>> _spanningTreeRoot;
     private List<string> _ans;
-    private int _currentNode;
 
     public Stopwatch Stopwatch { get { return _stopwatch; } }
     public TimeSpan Timeout { get { return _timeout; } }
@@ -113,8 +112,6 @@ public class Program
 
         _b = new();
         for (int i = 0; i < _lb; i++) _b.Add(-1);
-
-        _currentNode = 0;
     }
 
     public void MakeSpanningTree()
@@ -228,69 +225,128 @@ public class Program
         }
     }
 
-    public void ReturnCentralNode()
+    public List<int> GetShortestRoot(int start, int goal)
     {
-        if (_currentNode == _centralNode) return;
+        List<int> shortestRoot = new() { start, };
 
-        var root = _spanningTreeRoot[(_currentNode, _centralNode)];
-        for (int i = 1; i < root.Count; i++)
+        List<bool> seen = new();
+        for (int _ = 0; _ < _n; _++) seen.Add(false);
+        seen[start] = true;
+
+        Queue<(int, List<int>)> q = new();
+        q.Enqueue((start, new() { start, }));
+
+        while (q.Count >= 1)
         {
-            int nextNode = root[i];
-
-            if (!_b.Contains(nextNode))
+            (int currentNode, List<int> root) = q.Dequeue();
+            if (currentNode == goal)
             {
-                int ea = _a.IndexOf(nextNode);
-                int sa = Math.Max(ea - _lb + 1, 0);
-                int l = ea - sa + 1;
-                _ans.Add($"s {l} {sa} {0}");
-                for (int j = 0; j < l; j++)
-                {
-                    _b[j] = _a[sa + j];
-                }
+                shortestRoot = root;
+                break;
             }
 
-            _ans.Add($"m {nextNode}");
-            _currentNode = nextNode;
+            foreach (int v in _g[currentNode])
+            {
+                if (seen[v]) continue;
+                seen[v] = true;
+                var newRoot = DeepCopy.Clone(root);
+                newRoot.Add(v);
+                q.Enqueue((v, newRoot));
+            }
         }
+
+        return shortestRoot;
     }
 
-    public void GoTo(int destination)
+    public (int SignCount, List<string> Log) MoveSimulation(
+        List<int> root,
+        in List<int> before_b,
+        out List<int> after_b,
+        bool isReverseControl = false
+    )
     {
-        if (_currentNode != _centralNode)
-        {
-            throw new Exception($"_centralNodeではない頂点から目的地へ移動しようとした");
-        }
+        List<string> log = new();
+        after_b = DeepCopy.Clone(before_b);
 
-        var root = _spanningTreeRoot[(_currentNode, destination)];
         for (int i = 1; i < root.Count; i++)
         {
             int nextNode = root[i];
 
-            if (!_b.Contains(nextNode))
+            if (!after_b.Contains(nextNode))
             {
                 int sa = _a.IndexOf(nextNode);
                 int ea = Math.Min(sa + _lb - 1, _la - 1);
                 int l = ea - sa + 1;
-                _ans.Add($"s {l} {sa} {0}");
+
+                if (isReverseControl)
+                {
+                    ea = _a.IndexOf(nextNode);
+                    sa = Math.Max(ea - _lb + 1, 0);
+                    l = ea - sa + 1;
+                }
+
+                log.Add($"s {l} {sa} {0}");
                 for (int j = 0; j < l; j++)
                 {
-                    _b[j] = _a[sa + j];
+                    after_b[j] = _a[sa + j];
                 }
             }
 
-            _ans.Add($"m {nextNode}");
-            _currentNode = nextNode;
+            log.Add($"m {nextNode}");
         }
+
+        int signCount = 0;
+        foreach (string s in log)
+        {
+            if (s.StartsWith('s')) signCount++;
+        }
+
+        return (signCount, log);
     }
+
 
     public void Solve()
     {
         _ans.Add(string.Join(' ', _a));
 
-        foreach (int destination in _order)
+        int currentNode = 0;
+        int detourCount = 0;
+        int shortcutCount = 0;
+
+        foreach (int nextNode in _order)
         {
-            ReturnCentralNode();
-            GoTo(destination);
+            List<int> detourB;
+            (int detourSignCount1, List<string> detourLog1) = MoveSimulation(
+                _spanningTreeRoot[(currentNode, _centralNode)], _b, out detourB, true
+            );
+            (int detourSignCount2, List<string> detourLog2) = MoveSimulation(
+                _spanningTreeRoot[(_centralNode, nextNode)], detourB, out detourB
+            );
+
+            int detourSignCount = detourSignCount1 + detourSignCount2;
+            List<string> detourLog = new();
+            detourLog.AddRange(detourLog1);
+            detourLog.AddRange(detourLog2);
+
+            List<int> shortcutB;
+            (int shortcutSignCount, List<string> shortcutLog) = MoveSimulation(
+                GetShortestRoot(currentNode, nextNode), _b, out shortcutB
+            );
+
+            if (detourSignCount <= shortcutSignCount)
+            {
+                detourCount++;
+                _ans.AddRange(detourLog);
+                _b = detourB;
+            }
+            else
+            {
+                shortcutCount++;
+                _ans.AddRange(shortcutLog);
+                _b = shortcutB;
+            }
+
+            currentNode = nextNode;
         }
 
         foreach (string s in _ans)
