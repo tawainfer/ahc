@@ -28,6 +28,15 @@ public static class DeepCopy
     }
 }
 
+public static class SharedStopwatch
+{
+    private static Stopwatch _stopwatch = new Stopwatch();
+    public static void Start() => _stopwatch.Start();
+    public static void Stop() => _stopwatch.Stop();
+    public static void Reset() => _stopwatch.Reset();
+    public static long ElapsedMilliseconds() => _stopwatch.ElapsedMilliseconds;
+}
+
 public class Log
 {
     private List<string> _log;
@@ -98,7 +107,7 @@ public class Field
     private Dictionary<(int AreaIdFrom, int AreaIdTo), (int NodeFrom, int NodeTo)> _port;
     private int _currentNode = 0;
     private Log _log;
-    private Dictionary<(int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
+    private Dictionary<(int AreaId, int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
     private Dictionary<(int AreaIdFrom, int AreaIdTo), List<int>> _shortestPathAreaToArea;
     private List<int> _a;
     private int[] _b;
@@ -132,11 +141,19 @@ public class Field
         _nodeToAIndex = new();
 
         MakeGraph();
+
         MakeArea();
         ConnectArea();
         MakeAreaGraph();
         MakeShortestPathInArea();
         MakeShortestPathAreaToArea();
+
+        AddArea();
+        ConnectArea();
+        MakeAreaGraph();
+        MakeShortestPathInArea();
+        MakeShortestPathAreaToArea();
+
         MakeSign();
     }
 
@@ -248,7 +265,7 @@ public class Field
                 while (q.Count >= 1)
                 {
                     (int cp, List<int> path) = q.Dequeue();
-                    _shortestPathInArea[(sp, cp)] = DeepCopy.Clone(path);
+                    _shortestPathInArea[(id, sp, cp)] = DeepCopy.Clone(path);
 
                     foreach (int ep in _graph[cp])
                     {
@@ -293,6 +310,36 @@ public class Field
         }
     }
 
+    private void AddArea()
+    {
+        void dfs(int node, ref List<int> group, in int length)
+        {
+            foreach (int neighbor in _graph[node])
+            {
+                if (group.Count >= length) break;
+                if (group.Contains(neighbor)) continue;
+                group.Add(neighbor);
+                dfs(neighbor, ref group, length);
+            }
+        }
+
+        int remainingCountA = _la - _n;
+        while (remainingCountA >= 1)
+        {
+            int startNode = new Random().Next(_n);
+            List<int> group = new() { startNode, };
+            int length = Math.Min(_lb, remainingCountA);
+            remainingCountA -= length;
+            dfs(startNode, ref group, length);
+
+            _area.Add(group);
+            foreach (int x in group)
+            {
+                _nodeToAreaId[x].Add(_area.Count - 1);
+            }
+        }
+    }
+
     private void MakeSign()
     {
         _a = new();
@@ -311,14 +358,14 @@ public class Field
         while (_a.Count < _la) _a.Add(0);
     }
 
-    private Log Sign(int areaId)
+    private Log Sign(int areaId, ref int lastUsedAreaId)
     {
         Log log = new();
         int l = _area[areaId].Count;
         int pa = _areaIdToAIndex[areaId];
         int pb = 0;
 
-        _lastUsedAreaId = areaId;
+        lastUsedAreaId = areaId;
         log.Add($"s {l} {pa} {pb}");
         return log;
     }
@@ -327,6 +374,7 @@ public class Field
     {
         int minScore = int.MaxValue;
         Log minScoreLog = new();
+        int minScoreLastUsedAreaId = -1;
 
         foreach (int startAreaId in _nodeToAreaId[_currentNode])
         {
@@ -334,13 +382,14 @@ public class Field
             {
                 Log log = new();
                 int currentNode = _currentNode;
+                int lastUsedAreaId = _lastUsedAreaId;
 
                 var areaToAreaPath = _shortestPathAreaToArea[(startAreaId, destinationAreaId)];
                 for (int i = 0; i < areaToAreaPath.Count - 1; i++)
                 {
-                    if (_lastUsedAreaId != areaToAreaPath[i])
+                    if (lastUsedAreaId != areaToAreaPath[i])
                     {
-                        log.Add(Sign(areaToAreaPath[i]));
+                        log.Add(Sign(areaToAreaPath[i], ref lastUsedAreaId));
                     }
 
                     if (i != 0)
@@ -350,6 +399,7 @@ public class Field
                     }
 
                     var inAreaPath = _shortestPathInArea[(
+                        areaToAreaPath[i],
                         currentNode,
                         _port[(areaToAreaPath[i], areaToAreaPath[i + 1])].NodeFrom
                     )];
@@ -361,9 +411,9 @@ public class Field
                     currentNode = inAreaPath.Last();
                 }
 
-                if (_lastUsedAreaId != destinationAreaId)
+                if (lastUsedAreaId != destinationAreaId)
                 {
-                    log.Add(Sign(destinationAreaId));
+                    log.Add(Sign(destinationAreaId, ref lastUsedAreaId));
                 }
 
                 if (areaToAreaPath.Count >= 2)
@@ -372,7 +422,7 @@ public class Field
                     currentNode = _port[(areaToAreaPath[areaToAreaPath.Count - 2], areaToAreaPath[areaToAreaPath.Count - 1])].NodeTo;
                 }
 
-                var inAreaPath2 = _shortestPathInArea[(currentNode, destinationNode)];
+                var inAreaPath2 = _shortestPathInArea[(areaToAreaPath.Last(), currentNode, destinationNode)];
                 for (int i = 1; i < inAreaPath2.Count; i++)
                 {
                     int nextNode = inAreaPath2[i];
@@ -384,6 +434,7 @@ public class Field
                 {
                     minScore = log.Score;
                     minScoreLog = log;
+                    minScoreLastUsedAreaId = lastUsedAreaId;
                 }
             }
         }
@@ -392,6 +443,7 @@ public class Field
         {
             _log.Add(minScoreLog);
             _currentNode = destinationNode;
+            _lastUsedAreaId = minScoreLastUsedAreaId;
         }
 
         return minScoreLog;
@@ -453,12 +505,15 @@ public class Field
         sb.Append($"maxCountAreaToArea: {maxCountAreaToArea}\n");
 
         int maxCountInArea = int.MinValue;
-        for (int i = 0; i < _n; i++)
+        for (int id = 0; id < _area.Count; id++)
         {
-            for (int j = 0; j < _n; j++)
+            for (int cp = 0; cp < _n; cp++)
             {
-                if (!_shortestPathInArea.ContainsKey((i, j))) continue;
-                maxCountInArea = Math.Max(_shortestPathInArea[(i, j)].Count, maxCountInArea);
+                for (int ep = 0; ep < _n; ep++)
+                {
+                    if (!_shortestPathInArea.ContainsKey((id, cp, ep))) continue;
+                    maxCountInArea = Math.Max(_shortestPathInArea[(id, cp, ep)].Count, maxCountInArea);
+                }
             }
         }
         sb.Append($"maxCountInArea: {maxCountInArea}\n");
@@ -469,7 +524,6 @@ public class Field
 
 public class Program
 {
-    private Stopwatch _stopwatch;
     private int _n;
     private int _m;
     private int _t;
@@ -481,8 +535,6 @@ public class Program
     private List<int> _x;
     private List<int> _y;
 
-    public Stopwatch Stopwatch { get { return _stopwatch; } }
-
     public static void Main(string[] args)
     {
         new Program();
@@ -490,7 +542,8 @@ public class Program
 
     public Program()
     {
-        _stopwatch = Stopwatch.StartNew();
+        SharedStopwatch.Start();
+
         _u = new();
         _v = new();
         _order = new();
@@ -500,6 +553,7 @@ public class Program
         Input();
         Solve();
     }
+
     private void Input(bool isOmit = true)
     {
         var tmp = ReadLine()!.Split().Select(int.Parse).ToArray();
@@ -529,7 +583,7 @@ public class Program
     {
         int minScore = int.MaxValue;
         Field? minScoreField = null;
-        while (_stopwatch.ElapsedMilliseconds <= 2700)
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
         {
             List<int> scores = new();
             var field = new Field(_n, _m, _la, _lb, _u, _v);
@@ -550,4 +604,19 @@ public class Program
 
         minScoreField!.OutputLog();
     }
+
+    // private void Solve()
+    // {
+    //     var field = new Field(_n, _m, _la, _lb, _u, _v);
+
+    //     // debug
+    //     WriteLine(field);
+
+    //     foreach (int destinationNode in _order)
+    //     {
+    //         field.Move(destinationNode);
+    //     }
+
+    //     field.OutputLog();
+    // }
 }
