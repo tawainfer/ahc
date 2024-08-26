@@ -71,14 +71,6 @@ public class Log
         }
     }
 
-    // public void Output()
-    // {
-    //     foreach (string s in _log)
-    //     {
-    //         WriteLine(s);
-    //     }
-    // }
-
     public override string ToString()
     {
         StringBuilder sb = new();
@@ -101,9 +93,9 @@ public class Field
     private List<int> _v;
     private List<List<int>> _graph;
     private List<List<int>> _area;
-    private Dictionary<int, int> _nodeToAreaId;
+    private HashSet<int>[] _nodeToAreaId;
     private List<List<int>> _areaGraph;
-    private Dictionary<(int AreaIdFrom, int AreaIdTo), int> _port;
+    private Dictionary<(int AreaIdFrom, int AreaIdTo), (int NodeFrom, int NodeTo)> _port;
     private int _currentNode = 0;
     private Log _log;
     private Dictionary<(int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
@@ -127,7 +119,8 @@ public class Field
         _v = DeepCopy.Clone(v);
         _graph = new();
         _area = new();
-        _nodeToAreaId = new();
+        _nodeToAreaId = new HashSet<int>[_n];
+        for (int i = 0; i < _n; i++) _nodeToAreaId[i] = new();
         _areaGraph = new();
         _port = new();
         _log = new();
@@ -195,7 +188,7 @@ public class Field
             _area.Add(group);
             foreach (int x in group)
             {
-                _nodeToAreaId[x] = _area.Count - 1;
+                _nodeToAreaId[x].Add(_area.Count - 1);
             }
         }
     }
@@ -208,8 +201,13 @@ public class Field
             {
                 foreach (int ep in _graph[cp])
                 {
-                    _port[(_nodeToAreaId[cp], _nodeToAreaId[ep])] = cp;
-                    _port[(_nodeToAreaId[ep], _nodeToAreaId[cp])] = ep;
+                    foreach (int id1 in _nodeToAreaId[cp])
+                    {
+                        foreach (int id2 in _nodeToAreaId[ep])
+                        {
+                            _port[(id1, id2)] = (cp, ep);
+                        }
+                    }
                 }
             }
         }
@@ -241,9 +239,8 @@ public class Field
         {
             foreach (int sp in _area[id])
             {
-                Dictionary<int, bool> seen = new();
-                foreach (int tp in _area[id]) seen.Add(tp, false);
-                seen[sp] = true;
+                HashSet<int> seen = new();
+                seen.Add(sp);
 
                 Queue<(int Cp, List<int> Path)> q = new();
                 q.Enqueue((sp, new() { sp, }));
@@ -255,9 +252,9 @@ public class Field
 
                     foreach (int ep in _graph[cp])
                     {
-                        if (_nodeToAreaId[ep] != id) continue;
-                        if (seen[ep]) continue;
-                        seen[ep] = true;
+                        if (!_nodeToAreaId[ep].Contains(id)) continue;
+                        if (seen.Contains(ep)) continue;
+                        seen.Add(ep);
                         var newPath = DeepCopy.Clone(path);
                         newPath.Add(ep);
                         q.Enqueue((ep, newPath));
@@ -328,64 +325,76 @@ public class Field
 
     public Log Move(int destinationNode, bool simulation = false, bool ignoreArea = false)
     {
-        Log log = new();
-        int currentNode = _currentNode;
+        int minScore = int.MaxValue;
+        Log minScoreLog = new();
 
-        var areaToAreaPath = _shortestPathAreaToArea[(
-            _nodeToAreaId[currentNode],
-            _nodeToAreaId[destinationNode]
-        )];
-        for (int i = 0; i < areaToAreaPath.Count - 1; i++)
+        foreach (int startAreaId in _nodeToAreaId[_currentNode])
         {
-            if (_lastUsedAreaId != areaToAreaPath[i])
+            foreach (int destinationAreaId in _nodeToAreaId[destinationNode])
             {
-                log.Add(Sign(areaToAreaPath[i]));
+                Log log = new();
+                int currentNode = _currentNode;
+
+                var areaToAreaPath = _shortestPathAreaToArea[(startAreaId, destinationAreaId)];
+                for (int i = 0; i < areaToAreaPath.Count - 1; i++)
+                {
+                    if (_lastUsedAreaId != areaToAreaPath[i])
+                    {
+                        log.Add(Sign(areaToAreaPath[i]));
+                    }
+
+                    if (i != 0)
+                    {
+                        log.Add($"m {_port[(areaToAreaPath[i - 1], areaToAreaPath[i])].NodeTo}");
+                        currentNode = _port[(areaToAreaPath[i - 1], areaToAreaPath[i])].NodeTo;
+                    }
+
+                    var inAreaPath = _shortestPathInArea[(
+                        currentNode,
+                        _port[(areaToAreaPath[i], areaToAreaPath[i + 1])].NodeFrom
+                    )];
+                    for (int j = 1; j < inAreaPath.Count; j++)
+                    {
+                        int nextNode = inAreaPath[j];
+                        log.Add($"m {nextNode}");
+                    }
+                    currentNode = inAreaPath.Last();
+                }
+
+                if (_lastUsedAreaId != destinationAreaId)
+                {
+                    log.Add(Sign(destinationAreaId));
+                }
+
+                if (areaToAreaPath.Count >= 2)
+                {
+                    log.Add($"m {_port[(areaToAreaPath[areaToAreaPath.Count - 2], areaToAreaPath[areaToAreaPath.Count - 1])].NodeTo}");
+                    currentNode = _port[(areaToAreaPath[areaToAreaPath.Count - 2], areaToAreaPath[areaToAreaPath.Count - 1])].NodeTo;
+                }
+
+                var inAreaPath2 = _shortestPathInArea[(currentNode, destinationNode)];
+                for (int i = 1; i < inAreaPath2.Count; i++)
+                {
+                    int nextNode = inAreaPath2[i];
+                    log.Add($"m {nextNode}");
+                }
+                currentNode = inAreaPath2.Last();
+
+                if (log.Score < minScore)
+                {
+                    minScore = log.Score;
+                    minScoreLog = log;
+                }
             }
-
-            if (i != 0)
-            {
-                log.Add($"m {_port[(areaToAreaPath[i], areaToAreaPath[i - 1])]}");
-                currentNode = _port[(areaToAreaPath[i], areaToAreaPath[i - 1])];
-            }
-
-            var inAreaPath = _shortestPathInArea[(
-                currentNode,
-                _port[(areaToAreaPath[i], areaToAreaPath[i + 1])]
-            )];
-            for (int j = 1; j < inAreaPath.Count; j++)
-            {
-                int nextNode = inAreaPath[j];
-                log.Add($"m {nextNode}");
-            }
-            currentNode = inAreaPath.Last();
         }
-
-        if (_lastUsedAreaId != _nodeToAreaId[destinationNode])
-        {
-            log.Add(Sign(_nodeToAreaId[destinationNode]));
-        }
-
-        if (_nodeToAreaId[currentNode] != _nodeToAreaId[destinationNode])
-        {
-            log.Add($"m {_port[(_nodeToAreaId[destinationNode], _nodeToAreaId[currentNode])]}");
-            currentNode = _port[(_nodeToAreaId[destinationNode], _nodeToAreaId[currentNode])];
-        }
-
-        var inAreaPath2 = _shortestPathInArea[(currentNode, destinationNode)];
-        for (int i = 1; i < inAreaPath2.Count; i++)
-        {
-            int nextNode = inAreaPath2[i];
-            log.Add($"m {nextNode}");
-        }
-        currentNode = inAreaPath2.Last();
 
         if (!simulation)
         {
-            _log.Add(log);
-            _currentNode = currentNode;
+            _log.Add(minScoreLog);
+            _currentNode = destinationNode;
         }
 
-        return log;
+        return minScoreLog;
     }
 
     public void OutputLog()
@@ -515,21 +524,23 @@ public class Program
             }
         }
     }
+
     private void Solve()
     {
-
         int minScore = int.MaxValue;
         Field? minScoreField = null;
-        while (_stopwatch.ElapsedMilliseconds <= 2500)
+        while (_stopwatch.ElapsedMilliseconds <= 2700)
         {
-            int score = 0;
+            List<int> scores = new();
             var field = new Field(_n, _m, _la, _lb, _u, _v);
             foreach (int destinationNode in _order)
             {
-                score += field.Move(destinationNode).Score;
+                scores.Add(field.Move(destinationNode).Score);
             }
+            // WriteLine(string.Join(',', scores));
 
-            if (score < minScore)
+            int score = scores.Sum();
+            if (scores.Sum() < minScore)
             {
                 // WriteLine($"{minScore} => {score}");
                 minScore = score;
