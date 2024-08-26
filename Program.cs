@@ -42,6 +42,11 @@ public class Log
 
     public void Add(string s)
     {
+        if (!s.StartsWith("s ") && !s.StartsWith("m "))
+        {
+            throw new Exception("ログに追加できるのは's 'または'm 'で始まる文字列のみです");
+        }
+
         _log.Add(s);
         if (s.StartsWith("s ")) _score++;
     }
@@ -66,12 +71,23 @@ public class Log
         }
     }
 
-    public void Output()
+    // public void Output()
+    // {
+    //     foreach (string s in _log)
+    //     {
+    //         WriteLine(s);
+    //     }
+    // }
+
+    public override string ToString()
     {
+        StringBuilder sb = new();
         foreach (string s in _log)
         {
-            WriteLine(s);
+            sb.Append(s);
+            sb.Append("\n");
         }
+        return sb.ToString();
     }
 }
 
@@ -84,7 +100,6 @@ public class Field
     private List<int> _u;
     private List<int> _v;
     private List<List<int>> _graph;
-    // private List<List<int>> _spanningTree;
     private List<List<int>> _area;
     private Dictionary<int, int> _nodeToAreaId;
     private List<List<int>> _areaGraph;
@@ -94,7 +109,7 @@ public class Field
     private Dictionary<(int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
     private Dictionary<(int AreaIdFrom, int AreaIdTo), List<int>> _shortestPathAreaToArea;
     private List<int> _a;
-    private List<int> _b;
+    private int[] _b;
     private Dictionary<int, int> _areaIdToAIndex;
     private Dictionary<int, int> _nodeToAIndex;
     private int _lastUsedAreaId = -1;
@@ -119,7 +134,7 @@ public class Field
         _shortestPathInArea = new();
         _shortestPathAreaToArea = new();
         _a = new();
-        _b = new();
+        _b = new int[_lb];
         _areaIdToAIndex = new();
         _nodeToAIndex = new();
 
@@ -148,9 +163,7 @@ public class Field
     private void MakeArea()
     {
         _area = new();
-
-        List<bool> seen = new();
-        for (int _ = 0; _ < _n; _++) seen.Add(false);
+        bool[] seen = new bool[_n];
 
         List<int> idx = new();
         for (int i = 0; i < _n; i++) idx.Add(i);
@@ -260,8 +273,7 @@ public class Field
 
         for (int sp = 0; sp < _area.Count; sp++)
         {
-            List<bool> seen = new();
-            for (int _ = 0; _ < _area.Count; _++) seen.Add(false);
+            bool[] seen = new bool[_area.Count];
             seen[sp] = true;
 
             Queue<(int Cp, List<int> Path)> q = new();
@@ -287,7 +299,7 @@ public class Field
     private void MakeSign()
     {
         _a = new();
-        _b = new();
+        Array.Fill(_b, -1);
 
         for (int id = 0; id < _area.Count; id++)
         {
@@ -300,9 +312,6 @@ public class Field
         }
 
         while (_a.Count < _la) _a.Add(0);
-        while (_b.Count < _lb) _b.Add(-1);
-
-        _log.Add(string.Join(' ', _a));
     }
 
     private Log Sign(int areaId)
@@ -379,6 +388,12 @@ public class Field
         return log;
     }
 
+    public void OutputLog()
+    {
+        WriteLine(string.Join(' ', _a));
+        WriteLine(_log);
+    }
+
     public override string ToString()
     {
         StringBuilder sb = new();
@@ -418,6 +433,27 @@ public class Field
             sb.Append("\n");
         }
 
+        int maxCountAreaToArea = int.MinValue;
+        for (int i = 0; i < _area.Count; i++)
+        {
+            for (int j = 0; j < _area.Count; j++)
+            {
+                maxCountAreaToArea = Math.Max(_shortestPathAreaToArea[(i, j)].Count, maxCountAreaToArea);
+            }
+        }
+        sb.Append($"maxCountAreaToArea: {maxCountAreaToArea}\n");
+
+        int maxCountInArea = int.MinValue;
+        for (int i = 0; i < _n; i++)
+        {
+            for (int j = 0; j < _n; j++)
+            {
+                if (!_shortestPathInArea.ContainsKey((i, j))) continue;
+                maxCountInArea = Math.Max(_shortestPathInArea[(i, j)].Count, maxCountInArea);
+            }
+        }
+        sb.Append($"maxCountInArea: {maxCountInArea}\n");
+
         return sb.ToString();
     }
 }
@@ -425,7 +461,6 @@ public class Field
 public class Program
 {
     private Stopwatch _stopwatch;
-    private TimeSpan _timeout;
     private int _n;
     private int _m;
     private int _t;
@@ -438,7 +473,6 @@ public class Program
     private List<int> _y;
 
     public Stopwatch Stopwatch { get { return _stopwatch; } }
-    public TimeSpan Timeout { get { return _timeout; } }
 
     public static void Main(string[] args)
     {
@@ -448,7 +482,6 @@ public class Program
     public Program()
     {
         _stopwatch = Stopwatch.StartNew();
-        _timeout = TimeSpan.FromMilliseconds(2900);
         _u = new();
         _v = new();
         _order = new();
@@ -484,13 +517,26 @@ public class Program
     }
     private void Solve()
     {
-        var field = new Field(_n, _m, _la, _lb, _u, _v);
 
-        foreach (int destinationNode in _order)
+        int minScore = int.MaxValue;
+        Field? minScoreField = null;
+        while (_stopwatch.ElapsedMilliseconds <= 2500)
         {
-            field.Move(destinationNode);
+            int score = 0;
+            var field = new Field(_n, _m, _la, _lb, _u, _v);
+            foreach (int destinationNode in _order)
+            {
+                score += field.Move(destinationNode).Score;
+            }
+
+            if (score < minScore)
+            {
+                // WriteLine($"{minScore} => {score}");
+                minScore = score;
+                minScoreField = field;
+            }
         }
 
-        field.Log.Output();
+        minScoreField!.OutputLog();
     }
 }
