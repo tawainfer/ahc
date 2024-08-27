@@ -393,8 +393,13 @@ public class Field
                 shortestPath.RemoveLast();
             }
 
+            while (shortestPath.Count > _lb)
+            {
+                shortestPath.RemoveLast();
+            }
+
             if (shortestPath.Count > remainingCountA) continue;
-            if (shortestPath.Count > _lb) continue;
+            // if (shortestPath.Count > _lb) continue;
             remainingCountA -= shortestPath.Count;
 
             _area.Add(new List<int>(shortestPath));
