@@ -92,6 +92,28 @@ public class Log
     }
 }
 
+public class A
+{
+    private List<int> _a;
+
+    public int Count { get { return _a.Count; } }
+
+    public A()
+    {
+        _a = new();
+    }
+
+    public void Add(int x)
+    {
+        _a.Add(x);
+    }
+
+    public override string ToString()
+    {
+        return string.Join(' ', _a);
+    }
+}
+
 public class Field
 {
     private int _n;
@@ -100,6 +122,8 @@ public class Field
     private int _lb;
     private List<int> _u;
     private List<int> _v;
+    private List<int> _x;
+    private List<int> _y;
     private List<List<int>> _graph;
     private List<List<int>> _area;
     private HashSet<int>[] _nodeToAreaId;
@@ -109,7 +133,7 @@ public class Field
     private Log _log;
     private Dictionary<(int AreaId, int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
     private Dictionary<(int AreaIdFrom, int AreaIdTo), List<int>> _shortestPathAreaToArea;
-    private List<int> _a;
+    private A _a;
     private int[] _b;
     private Dictionary<int, int> _areaIdToAIndex;
     private Dictionary<int, int> _nodeToAIndex;
@@ -117,8 +141,9 @@ public class Field
 
     public int Score { get { return _log.Score; } }
     public Log Log { get { return _log; } }
+    public A A { get { return _a; } }
 
-    public Field(int n, int m, int la, int lb, in List<int> u, in List<int> v)
+    public Field(int n, int m, int la, int lb, in List<int> u, in List<int> v, in List<int> x, in List<int> y)
     {
         _n = n;
         _m = m;
@@ -126,6 +151,8 @@ public class Field
         _lb = lb;
         _u = DeepCopy.Clone(u);
         _v = DeepCopy.Clone(v);
+        _x = DeepCopy.Clone(x);
+        _y = DeepCopy.Clone(y);
         _graph = new();
         _area = new();
         _nodeToAreaId = new HashSet<int>[_n];
@@ -312,30 +339,68 @@ public class Field
 
     private void AddArea()
     {
-        void dfs(int node, ref List<int> group, in int length)
-        {
-            foreach (int neighbor in _graph[node])
-            {
-                if (group.Count >= length) break;
-                if (group.Contains(neighbor)) continue;
-                group.Add(neighbor);
-                dfs(neighbor, ref group, length);
-            }
-        }
-
         int remainingCountA = _la - _n;
-        while (remainingCountA >= 1)
-        {
-            int startNode = new Random().Next(_n);
-            List<int> group = new() { startNode, };
-            int length = Math.Min(_lb, remainingCountA);
-            remainingCountA -= length;
-            dfs(startNode, ref group, length);
+        int beforeChangeAreaCount = _area.Count;
+        // int retryCount = 0;
+        // int maxRetryCount = 30;
 
-            _area.Add(group);
-            foreach (int x in group)
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
+        {
+            // if (retryCount > maxRetryCount) break;
+            // retryCount++;
+
+            int id1 = new Random().Next(beforeChangeAreaCount);
+            int id2 = new Random().Next(beforeChangeAreaCount);
+            if (_shortestPathAreaToArea[(id1, id2)].Count <= 2) continue;
+
+            HashSet<int> seen = new() { _area[id1][0], };
+            Queue<(int Cp, LinkedList<int> Path)> q = new();
+            q.Enqueue((_area[id1][0], new(new[] { _area[id1][0], })));
+
+            LinkedList<int> shortestPath = new();
+            while (q.Count >= 1)
             {
-                _nodeToAreaId[x].Add(_area.Count - 1);
+                (int cp, LinkedList<int> path) = q.Dequeue();
+                if (cp == _area[id2][0])
+                {
+                    shortestPath = path;
+                    break;
+                }
+
+                foreach (int ep in _graph[cp])
+                {
+                    if (seen.Contains(ep)) continue;
+                    seen.Add(ep);
+                    var newPath = DeepCopy.Clone(path);
+                    newPath.AddLast(ep);
+                    q.Enqueue((ep, newPath));
+                }
+            }
+
+            while (shortestPath.Count >= 2)
+            {
+                LinkedListNode<int> firstNode = shortestPath.First!;
+                LinkedListNode<int> nextNode = firstNode.Next!;
+                if (!_nodeToAreaId[nextNode.Value].Contains(id1)) break;
+                shortestPath.RemoveFirst();
+            }
+
+            while (shortestPath.Count >= 2)
+            {
+                LinkedListNode<int> lastNode = shortestPath.Last!;
+                LinkedListNode<int> previousNode = lastNode.Previous!;
+                if (!_nodeToAreaId[previousNode.Value].Contains(id2)) break;
+                shortestPath.RemoveLast();
+            }
+
+            if (shortestPath.Count > remainingCountA) continue;
+            if (shortestPath.Count > _lb) continue;
+            remainingCountA -= shortestPath.Count;
+
+            _area.Add(new List<int>(shortestPath));
+            foreach (int node in shortestPath)
+            {
+                _nodeToAreaId[node].Add(_area.Count - 1);
             }
         }
     }
@@ -449,10 +514,19 @@ public class Field
         return minScoreLog;
     }
 
-    public void OutputLog()
+    public Log Illumination()
     {
-        WriteLine(string.Join(' ', _a));
-        WriteLine(_log);
+        Log log = new();
+        for (int id = 0; id < _area.Count; id++)
+        {
+            int l = _area[id].Count;
+            int pa = _areaIdToAIndex[id];
+            int pb = 0;
+
+            log.Add($"s {l} {pa} {pb}");
+        }
+
+        return log;
     }
 
     public override string ToString()
@@ -554,7 +628,7 @@ public class Program
         Solve();
     }
 
-    private void Input(bool isOmit = true)
+    private void Input()
     {
         var tmp = ReadLine()!.Split().Select(int.Parse).ToArray();
         (_n, _m, _t, _la, _lb) = (tmp[0], tmp[1], tmp[2], tmp[3], tmp[4]);
@@ -568,55 +642,54 @@ public class Program
 
         _order = ReadLine()!.Split().Select(int.Parse).ToList();
 
-        if (!isOmit)
+        for (int _ = 0; _ < _n; _++)
         {
-            for (int _ = 0; _ < _n; _++)
-            {
-                tmp = ReadLine()!.Split().Select(int.Parse).ToArray();
-                _x.Add(tmp[0]);
-                _y.Add(tmp[1]);
-            }
+            tmp = ReadLine()!.Split().Select(int.Parse).ToArray();
+            _x.Add(tmp[0]);
+            _y.Add(tmp[1]);
         }
-    }
-
-    private void Solve()
-    {
-        int minScore = int.MaxValue;
-        Field? minScoreField = null;
-        while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
-        {
-            List<int> scores = new();
-            var field = new Field(_n, _m, _la, _lb, _u, _v);
-            foreach (int destinationNode in _order)
-            {
-                scores.Add(field.Move(destinationNode).Score);
-            }
-            // WriteLine(string.Join(',', scores));
-
-            int score = scores.Sum();
-            if (scores.Sum() < minScore)
-            {
-                // WriteLine($"{minScore} => {score}");
-                minScore = score;
-                minScoreField = field;
-            }
-        }
-
-        minScoreField!.OutputLog();
     }
 
     // private void Solve()
     // {
-    //     var field = new Field(_n, _m, _la, _lb, _u, _v);
-
-    //     // debug
-    //     WriteLine(field);
-
-    //     foreach (int destinationNode in _order)
+    //     int minScore = int.MaxValue;
+    //     Field? minScoreField = null;
+    //     while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
     //     {
-    //         field.Move(destinationNode);
+    //         List<int> scores = new();
+    //         var field = new Field(_n, _m, _la, _lb, _u, _v, _x, _y);
+    //         foreach (int destinationNode in _order)
+    //         {
+    //             scores.Add(field.Move(destinationNode).Score);
+    //         }
+    //         // WriteLine(string.Join(',', scores));
+
+    //         int score = scores.Sum();
+    //         if (scores.Sum() < minScore)
+    //         {
+    //             WriteLine($"{minScore} => {score}");
+    //             minScore = score;
+    //             minScoreField = field;
+    //         }
+
+    //         WriteLine($"{SharedStopwatch.ElapsedMilliseconds()}ms"); // debug
     //     }
 
-    //     field.OutputLog();
+    //     WriteLine(minScoreField!.A);
+    //     WriteLine(minScoreField!.Log);
     // }
+
+    private void Solve()
+    {
+        var field = new Field(_n, _m, _la, _lb, _u, _v, _x, _y);
+
+        foreach (int destinationNode in _order)
+        {
+            field.Move(destinationNode);
+        }
+
+        WriteLine(field.A);
+        WriteLine(field.Log);
+        // WriteLine(field.Illumination());
+    }
 }
