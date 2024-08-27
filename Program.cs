@@ -95,22 +95,37 @@ public class Log
 public class A
 {
     private List<int> _a;
+    private int _la;
 
     public int Count { get { return _a.Count; } }
 
-    public A()
+    public A(int la)
     {
         _a = new();
+        _la = la;
     }
 
     public void Add(int x)
     {
+        if (_a.Count >= _la) throw new Exception("Aの長さが_laより大きくなりました");
         _a.Add(x);
+    }
+
+    public void AddRange(List<int> l)
+    {
+        foreach (int x in l) Add(x);
     }
 
     public override string ToString()
     {
-        return string.Join(' ', _a);
+        StringBuilder sb = new();
+        for (int i = 0; i < _la; i++)
+        {
+            sb.Append((i >= _a.Count ? 0 : _a[i]).ToString());
+            if (i != _la - 1) sb.Append(" ");
+        }
+
+        return sb.ToString();
     }
 }
 
@@ -136,7 +151,6 @@ public class Field
     private A _a;
     private int[] _b;
     private Dictionary<int, int> _areaIdToAIndex;
-    private Dictionary<int, int> _nodeToAIndex;
     private int _lastUsedAreaId = -1;
 
     public int Score { get { return _log.Score; } }
@@ -162,10 +176,10 @@ public class Field
         _log = new();
         _shortestPathInArea = new();
         _shortestPathAreaToArea = new();
-        _a = new();
+        _a = new(_la);
         _b = new int[_lb];
+        Array.Fill(_b, -1);
         _areaIdToAIndex = new();
-        _nodeToAIndex = new();
 
         MakeGraph();
 
@@ -180,8 +194,6 @@ public class Field
         MakeAreaGraph();
         MakeShortestPathInArea();
         MakeShortestPathAreaToArea();
-
-        MakeSign();
     }
 
     private void MakeGraph()
@@ -200,41 +212,63 @@ public class Field
     private void MakeArea()
     {
         _area = new();
-        bool[] seen = new bool[_n];
 
-        List<int> idx = new();
-        for (int i = 0; i < _n; i++) idx.Add(i);
-        idx.Shuffle();
-
-        foreach (int i in idx)
+        void dfs(int node, List<int> path, ref HashSet<int> seen, ref HashSet<int> confirm)
         {
-            if (seen[i]) continue;
-            seen[i] = true;
-
-            Queue<int> q = new();
-            q.Enqueue(i);
-
-            List<int> group = new() { i, };
-            while (q.Count >= 1 && group.Count < _lb)
+            foreach (int neighbor in _graph[node])
             {
-                int cp = q.Dequeue();
-
-                foreach (int ep in _graph[cp])
-                {
-                    if (group.Count + 1 > _lb) break;
-                    if (seen[ep]) continue;
-                    seen[ep] = true;
-                    group.Add(ep);
-                    q.Enqueue(ep);
-                }
+                if (seen.Contains(neighbor)) continue;
+                seen.Add(neighbor);
+                var newPath = DeepCopy.Clone(path);
+                newPath.Add(neighbor);
+                dfs(neighbor, newPath, ref seen, ref confirm);
             }
 
-            _area.Add(group);
-            foreach (int x in group)
+            List<int> groupCandidates = new();
+            while (path.Count >= 1)
             {
-                _nodeToAreaId[x].Add(_area.Count - 1);
+                if (confirm.Contains(path.Last())) break;
+                confirm.Add(path.Last());
+                groupCandidates.Add(path.Last());
+                path.RemoveAt(path.Count - 1);
+            }
+
+            if (groupCandidates.Count >= 1)
+            {
+                int idx = 0;
+                bool isContinue = true;
+                do
+                {
+                    List<int> group;
+                    if (idx + _lb - 1 < groupCandidates.Count)
+                    {
+                        group = groupCandidates.GetRange(idx, _lb);
+                    }
+                    else
+                    {
+                        idx = Math.Max(groupCandidates.Count - _lb, 0);
+                        group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
+                        isContinue = false;
+                    }
+
+                    _areaIdToAIndex[_area.Count] = _a.Count + idx;
+                    foreach (int x in group)
+                    {
+                        _nodeToAreaId[x].Add(_area.Count);
+                    }
+                    _area.Add(group);
+
+                    idx += _lb / 2;
+                } while (isContinue);
+
+                _a.AddRange(groupCandidates);
             }
         }
+
+        int startNode = 0;
+        HashSet<int> seen = new();
+        HashSet<int> confirm = new();
+        dfs(startNode, new() { startNode, }, ref seen, ref confirm);
     }
 
     private void ConnectArea()
@@ -341,17 +375,12 @@ public class Field
     {
         int remainingCountA = _la - _n;
         int beforeChangeAreaCount = _area.Count;
-        // int retryCount = 0;
-        // int maxRetryCount = 30;
 
-        while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2000)
         {
-            // if (retryCount > maxRetryCount) break;
-            // retryCount++;
-
             int id1 = new Random().Next(beforeChangeAreaCount);
             int id2 = new Random().Next(beforeChangeAreaCount);
-            if (_shortestPathAreaToArea[(id1, id2)].Count <= 2) continue;
+            if (_shortestPathAreaToArea[(id1, id2)].Count <= 4) continue;
 
             HashSet<int> seen = new() { _area[id1][0], };
             Queue<(int Cp, LinkedList<int> Path)> q = new();
@@ -402,30 +431,16 @@ public class Field
             // if (shortestPath.Count > _lb) continue;
             remainingCountA -= shortestPath.Count;
 
-            _area.Add(new List<int>(shortestPath));
+            _areaIdToAIndex[_area.Count] = _a.Count;
             foreach (int node in shortestPath)
             {
-                _nodeToAreaId[node].Add(_area.Count - 1);
+                _nodeToAreaId[node].Add(_area.Count);
             }
+
+            List<int> shortestPathList = new(shortestPath);
+            _area.Add(shortestPathList);
+            _a.AddRange(shortestPathList);
         }
-    }
-
-    private void MakeSign()
-    {
-        _a = new();
-        Array.Fill(_b, -1);
-
-        for (int id = 0; id < _area.Count; id++)
-        {
-            _areaIdToAIndex[id] = _a.Count;
-            foreach (int node in _area[id])
-            {
-                _nodeToAIndex[node] = _a.Count;
-                _a.Add(node);
-            }
-        }
-
-        while (_a.Count < _la) _a.Add(0);
     }
 
     private Log Sign(int areaId, ref int lastUsedAreaId)
