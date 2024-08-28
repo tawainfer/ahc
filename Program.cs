@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
-using Newtonsoft.Json;
-using static System.Console;
 using System.Text;
+using System.Text.Json;
+using static System.Console;
 
 public static class Extensions
 {
@@ -23,8 +23,8 @@ public static class DeepCopy
 {
     public static T Clone<T>(T obj)
     {
-        string json = JsonConvert.SerializeObject(obj);
-        return JsonConvert.DeserializeObject<T>(json)!;
+        ReadOnlySpan<byte> bytes = JsonSerializer.SerializeToUtf8Bytes<T>(obj);
+        return JsonSerializer.Deserialize<T>(bytes)!;
     }
 }
 
@@ -146,12 +146,13 @@ public class Field
     private Dictionary<(int AreaIdFrom, int AreaIdTo), (int NodeFrom, int NodeTo)> _port;
     private int _currentNode = 0;
     private Log _log;
-    private Dictionary<(int AreaId, int NodeFrom, int NodeTo), List<int>> _shortestPathInArea;
-    private Dictionary<(int AreaIdFrom, int AreaIdTo), List<int>> _shortestPathAreaToArea;
+    private Dictionary<(int Id, int NodeFrom, int NodeTo), (List<int> Path, int UpdateAreaCount)> _shortestPathInArea;
+    private Dictionary<(int IdFrom, int IdTo), (List<int> Path, int UpdateAreaCount)> _shortestPathAreaToArea;
     private A _a;
     private int[] _b;
     private Dictionary<int, int> _areaIdToAIndex;
     private int _lastUsedAreaId = -1;
+    private int _updateAreaCount = 0;
 
     public int Score { get { return _log.Score; } }
     public Log Log { get { return _log; } }
@@ -182,18 +183,8 @@ public class Field
         _areaIdToAIndex = new();
 
         MakeGraph();
-
         MakeArea();
-        ConnectArea();
-        MakeAreaGraph();
-        MakeShortestPathInArea();
-        MakeShortestPathAreaToArea();
-
         AddArea();
-        ConnectArea();
-        MakeAreaGraph();
-        MakeShortestPathInArea();
-        MakeShortestPathAreaToArea();
     }
 
     private void MakeGraph()
@@ -207,6 +198,44 @@ public class Field
             _graph[_v[i]].Add(_u[i]);
         }
         for (int i = 0; i < _n; i++) _graph[i].Sort();
+    }
+
+    private void ConnectArea()
+    {
+        for (int id = 0; id < _area.Count; id++)
+        {
+            foreach (int cp in _area[id])
+            {
+                foreach (int ep in _graph[cp])
+                {
+                    foreach (int id1 in _nodeToAreaId[cp])
+                    {
+                        foreach (int id2 in _nodeToAreaId[ep])
+                        {
+                            _port[(id1, id2)] = (cp, ep);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void MakeAreaGraph()
+    {
+        _areaGraph = new();
+        for (int _ = 0; _ < _area.Count; _++) _areaGraph.Add(new());
+
+        for (int id1 = 0; id1 < _area.Count; id1++)
+        {
+            for (int id2 = id1 + 1; id2 < _area.Count; id2++)
+            {
+                if (_port.ContainsKey((id1, id2)))
+                {
+                    _areaGraph[id1].Add(id2);
+                    _areaGraph[id2].Add(id1);
+                }
+            }
+        }
     }
 
     private void MakeArea()
@@ -269,106 +298,10 @@ public class Field
         HashSet<int> seen = new();
         HashSet<int> confirm = new();
         dfs(startNode, new() { startNode, }, ref seen, ref confirm);
-    }
 
-    private void ConnectArea()
-    {
-        for (int id = 0; id < _area.Count; id++)
-        {
-            foreach (int cp in _area[id])
-            {
-                foreach (int ep in _graph[cp])
-                {
-                    foreach (int id1 in _nodeToAreaId[cp])
-                    {
-                        foreach (int id2 in _nodeToAreaId[ep])
-                        {
-                            _port[(id1, id2)] = (cp, ep);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private void MakeAreaGraph()
-    {
-        _areaGraph = new();
-        for (int _ = 0; _ < _area.Count; _++) _areaGraph.Add(new());
-
-        for (int id1 = 0; id1 < _area.Count; id1++)
-        {
-            for (int id2 = id1 + 1; id2 < _area.Count; id2++)
-            {
-                if (_port.ContainsKey((id1, id2)))
-                {
-                    _areaGraph[id1].Add(id2);
-                    _areaGraph[id2].Add(id1);
-                }
-            }
-        }
-    }
-
-    private void MakeShortestPathInArea()
-    {
-        _shortestPathInArea = new();
-
-        for (int id = 0; id < _area.Count; id++)
-        {
-            foreach (int sp in _area[id])
-            {
-                HashSet<int> seen = new();
-                seen.Add(sp);
-
-                Queue<(int Cp, List<int> Path)> q = new();
-                q.Enqueue((sp, new() { sp, }));
-
-                while (q.Count >= 1)
-                {
-                    (int cp, List<int> path) = q.Dequeue();
-                    _shortestPathInArea[(id, sp, cp)] = DeepCopy.Clone(path);
-
-                    foreach (int ep in _graph[cp])
-                    {
-                        if (!_nodeToAreaId[ep].Contains(id)) continue;
-                        if (seen.Contains(ep)) continue;
-                        seen.Add(ep);
-                        var newPath = DeepCopy.Clone(path);
-                        newPath.Add(ep);
-                        q.Enqueue((ep, newPath));
-                    }
-                }
-            }
-        }
-    }
-
-    private void MakeShortestPathAreaToArea()
-    {
-        _shortestPathAreaToArea = new();
-
-        for (int sp = 0; sp < _area.Count; sp++)
-        {
-            bool[] seen = new bool[_area.Count];
-            seen[sp] = true;
-
-            Queue<(int Cp, List<int> Path)> q = new();
-            q.Enqueue((sp, new() { sp, }));
-
-            while (q.Count >= 1)
-            {
-                (int cp, List<int> path) = q.Dequeue();
-                _shortestPathAreaToArea[(sp, cp)] = DeepCopy.Clone(path);
-
-                foreach (int ep in _areaGraph[cp])
-                {
-                    if (seen[ep]) continue;
-                    seen[ep] = true;
-                    var newPath = DeepCopy.Clone(path);
-                    newPath.Add(ep);
-                    q.Enqueue((ep, newPath));
-                }
-            }
-        }
+        ConnectArea();
+        MakeAreaGraph();
+        _updateAreaCount++;
     }
 
     private void AddArea()
@@ -376,11 +309,11 @@ public class Field
         int remainingCountA = _la - _n;
         int beforeChangeAreaCount = _area.Count;
 
-        while (SharedStopwatch.ElapsedMilliseconds() <= 2000)
+        while (SharedStopwatch.ElapsedMilliseconds() <= 1750)
         {
             int id1 = new Random().Next(beforeChangeAreaCount);
             int id2 = new Random().Next(beforeChangeAreaCount);
-            if (_shortestPathAreaToArea[(id1, id2)].Count <= 4) continue;
+            if (GetShortestPathAreaToArea(id1, id2).Count <= 4) continue;
 
             HashSet<int> seen = new() { _area[id1][0], };
             Queue<(int Cp, LinkedList<int> Path)> q = new();
@@ -428,7 +361,6 @@ public class Field
             }
 
             if (shortestPath.Count > remainingCountA) continue;
-            // if (shortestPath.Count > _lb) continue;
             remainingCountA -= shortestPath.Count;
 
             _areaIdToAIndex[_area.Count] = _a.Count;
@@ -441,6 +373,102 @@ public class Field
             _area.Add(shortestPathList);
             _a.AddRange(shortestPathList);
         }
+
+        ConnectArea();
+        MakeAreaGraph();
+        _updateAreaCount++;
+    }
+
+    private List<int> GetShortestPathInArea(int id, int nodeFrom, int nodeTo)
+    {
+        if (_shortestPathInArea.ContainsKey((id, nodeFrom, nodeTo))
+            && _shortestPathInArea[(id, nodeFrom, nodeTo)].UpdateAreaCount == _updateAreaCount)
+        {
+            return DeepCopy.Clone(_shortestPathInArea[(id, nodeFrom, nodeTo)].Path);
+        }
+
+        if (!_nodeToAreaId[nodeFrom].Contains(id))
+        {
+            throw new Exception($"頂点{nodeFrom}はエリア{id}に属していません");
+        }
+
+        if (!_nodeToAreaId[nodeTo].Contains(id))
+        {
+            throw new Exception($"頂点{nodeTo}はエリア{id}に属していません");
+        }
+
+        HashSet<int> seen = new() { nodeFrom, };
+        Queue<(int Node, List<int> Path)> q = new();
+        q.Enqueue((nodeFrom, new() { nodeFrom, }));
+
+        while (q.Count >= 1)
+        {
+            (int node, List<int> path) = q.Dequeue();
+
+            if (!_shortestPathInArea.ContainsKey((id, nodeFrom, nodeTo))
+                || _shortestPathInArea[(id, nodeFrom, nodeTo)].UpdateAreaCount != _updateAreaCount)
+            {
+                _shortestPathInArea[(id, nodeFrom, node)] = (
+                    DeepCopy.Clone(path),
+                    _updateAreaCount
+                );
+            }
+
+            if (node == nodeTo) break;
+
+            foreach (int neighbor in _graph[node])
+            {
+                if (!_nodeToAreaId[neighbor].Contains(id)) continue;
+                if (seen.Contains(neighbor)) continue;
+                seen.Add(neighbor);
+                var newPath = DeepCopy.Clone(path);
+                newPath.Add(neighbor);
+                q.Enqueue((neighbor, newPath));
+            }
+        }
+
+        return DeepCopy.Clone(_shortestPathInArea[(id, nodeFrom, nodeTo)].Path);
+    }
+
+    private List<int> GetShortestPathAreaToArea(int idFrom, int idTo)
+    {
+        if (_shortestPathAreaToArea.ContainsKey((idFrom, idTo))
+            && _shortestPathAreaToArea[(idFrom, idTo)].UpdateAreaCount == _updateAreaCount)
+        {
+            return DeepCopy.Clone(_shortestPathAreaToArea[(idFrom, idTo)].Path);
+        }
+
+        HashSet<int> seen = new() { idFrom, };
+        Queue<(int Node, List<int> Path)> q = new();
+        q.Enqueue((idFrom, new() { idFrom, }));
+
+        while (q.Count >= 1)
+        {
+            (int node, List<int> path) = q.Dequeue();
+            _shortestPathAreaToArea[(idFrom, node)] = (DeepCopy.Clone(path), _updateAreaCount);
+
+            if (!_shortestPathAreaToArea.ContainsKey((idFrom, node))
+                || _shortestPathAreaToArea[(idFrom, node)].UpdateAreaCount != _updateAreaCount)
+            {
+                _shortestPathAreaToArea[(idFrom, node)] = (
+                    DeepCopy.Clone(path),
+                    _updateAreaCount
+                );
+            }
+
+            if (node == idTo) break;
+
+            foreach (int neighbor in _areaGraph[node])
+            {
+                if (seen.Contains(neighbor)) continue;
+                seen.Add(neighbor);
+                var newPath = DeepCopy.Clone(path);
+                newPath.Add(neighbor);
+                q.Enqueue((neighbor, newPath));
+            }
+        }
+
+        return DeepCopy.Clone(_shortestPathAreaToArea[(idFrom, idTo)].Path);
     }
 
     private Log Sign(int areaId, ref int lastUsedAreaId)
@@ -469,7 +497,7 @@ public class Field
                 int currentNode = _currentNode;
                 int lastUsedAreaId = _lastUsedAreaId;
 
-                var areaToAreaPath = _shortestPathAreaToArea[(startAreaId, destinationAreaId)];
+                var areaToAreaPath = GetShortestPathAreaToArea(startAreaId, destinationAreaId);
                 for (int i = 0; i < areaToAreaPath.Count - 1; i++)
                 {
                     if (lastUsedAreaId != areaToAreaPath[i])
@@ -483,11 +511,12 @@ public class Field
                         currentNode = _port[(areaToAreaPath[i - 1], areaToAreaPath[i])].NodeTo;
                     }
 
-                    var inAreaPath = _shortestPathInArea[(
+                    var inAreaPath = GetShortestPathInArea(
                         areaToAreaPath[i],
                         currentNode,
                         _port[(areaToAreaPath[i], areaToAreaPath[i + 1])].NodeFrom
-                    )];
+                    );
+
                     for (int j = 1; j < inAreaPath.Count; j++)
                     {
                         int nextNode = inAreaPath[j];
@@ -507,7 +536,12 @@ public class Field
                     currentNode = _port[(areaToAreaPath[areaToAreaPath.Count - 2], areaToAreaPath[areaToAreaPath.Count - 1])].NodeTo;
                 }
 
-                var inAreaPath2 = _shortestPathInArea[(areaToAreaPath.Last(), currentNode, destinationNode)];
+                var inAreaPath2 = GetShortestPathInArea(
+                    areaToAreaPath.Last(),
+                    currentNode,
+                    destinationNode
+                );
+
                 for (int i = 1; i < inAreaPath2.Count; i++)
                 {
                     int nextNode = inAreaPath2[i];
@@ -588,29 +622,29 @@ public class Field
             sb.Append("\n");
         }
 
-        int maxCountAreaToArea = int.MinValue;
-        for (int i = 0; i < _area.Count; i++)
-        {
-            for (int j = 0; j < _area.Count; j++)
-            {
-                maxCountAreaToArea = Math.Max(_shortestPathAreaToArea[(i, j)].Count, maxCountAreaToArea);
-            }
-        }
-        sb.Append($"maxCountAreaToArea: {maxCountAreaToArea}\n");
+        // int maxCountAreaToArea = int.MinValue;
+        // for (int i = 0; i < _area.Count; i++)
+        // {
+        //     for (int j = 0; j < _area.Count; j++)
+        //     {
+        //         maxCountAreaToArea = Math.Max(_shortestPathAreaToArea[(i, j)].Count, maxCountAreaToArea);
+        //     }
+        // }
+        // sb.Append($"maxCountAreaToArea: {maxCountAreaToArea}\n");
 
-        int maxCountInArea = int.MinValue;
-        for (int id = 0; id < _area.Count; id++)
-        {
-            for (int cp = 0; cp < _n; cp++)
-            {
-                for (int ep = 0; ep < _n; ep++)
-                {
-                    if (!_shortestPathInArea.ContainsKey((id, cp, ep))) continue;
-                    maxCountInArea = Math.Max(_shortestPathInArea[(id, cp, ep)].Count, maxCountInArea);
-                }
-            }
-        }
-        sb.Append($"maxCountInArea: {maxCountInArea}\n");
+        // int maxCountInArea = int.MinValue;
+        // for (int id = 0; id < _area.Count; id++)
+        // {
+        //     for (int cp = 0; cp < _n; cp++)
+        //     {
+        //         for (int ep = 0; ep < _n; ep++)
+        //         {
+        //             if (!_shortestPathInArea[id].ContainsKey((cp, ep))) continue;
+        //             maxCountInArea = Math.Max(_shortestPathInArea[id][(cp, ep)].Count, maxCountInArea);
+        //         }
+        //     }
+        // }
+        // sb.Append($"maxCountInArea: {maxCountInArea}\n");
 
         return sb.ToString();
     }
