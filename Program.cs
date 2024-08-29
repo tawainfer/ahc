@@ -195,6 +195,8 @@ public class Field
         // }
 
         MakeArea();
+        // MakeArea2();
+        // MakeArea3();
         while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2000)
         {
             AddArea();
@@ -308,7 +310,12 @@ public class Field
 
         void dfs(int node, List<int> path, ref HashSet<int> seen, ref HashSet<int> confirm)
         {
-            foreach (int neighbor in _graph[node])
+            List<int> farFromCenter = new(_graph[node]);
+            farFromCenter.Sort((a, b) =>
+                (Math.Abs(_x[b]) + Math.Abs(_y[b])) - (Math.Abs(_x[a]) + Math.Abs(_y[a]))
+            );
+
+            foreach (int neighbor in farFromCenter)
             {
                 if (seen.Contains(neighbor)) continue;
                 seen.Add(neighbor);
@@ -358,7 +365,12 @@ public class Field
             }
         }
 
-        int startNode = 0;
+        List<int> nearToCenter = new(Enumerable.Range(0, _n));
+        nearToCenter.Sort((a, b) =>
+            (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
+        );
+
+        int startNode = nearToCenter.First();
         HashSet<int> seen = new();
         HashSet<int> confirm = new();
         dfs(startNode, new() { startNode, }, ref seen, ref confirm);
@@ -367,6 +379,98 @@ public class Field
         MakeAreaGraph();
         _updateAreaCount++;
     }
+
+    // private void MakeArea2()
+    // {
+    //     _area = new();
+
+    //     void dfs(int node, List<int> path, ref HashSet<int> seen, ref List<int> groupCandidates, in HashSet<int> confirmNodes)
+    //     {
+    //         if (path.Count >= groupCandidates.Count) groupCandidates = path;
+    //         if (path.Count >= _lb) return;
+
+    //         List<int> nearToCenter = new(_graph[node]);
+    //         nearToCenter.Sort((a, b) =>
+    //             (Math.Abs(_x[b]) + Math.Abs(_y[b])) - (Math.Abs(_x[a]) + Math.Abs(_y[a]))
+    //         );
+
+    //         foreach (int neighbor in nearToCenter)
+    //         {
+    //             if (seen.Contains(neighbor) || confirmNodes.Contains(neighbor)) continue;
+    //             seen.Add(neighbor);
+    //             var newPath = DeepCopy.Clone(path);
+    //             newPath.Add(neighbor);
+    //             dfs(neighbor, newPath, ref seen, ref groupCandidates, confirmNodes);
+    //         }
+    //     }
+
+
+    //     List<int> farFromCenter = new(Enumerable.Range(0, _n));
+    //     farFromCenter.Sort((a, b) =>
+    //         (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
+    //     );
+
+    //     HashSet<int> confirmNodes = new();
+    //     foreach (int startNode in farFromCenter)
+    //     {
+    //         if (confirmNodes.Contains(startNode)) continue;
+
+    //         List<int> groupCandidates = new();
+    //         HashSet<int> seen = new() { startNode, };
+    //         dfs(startNode, new() { startNode, }, ref seen, ref groupCandidates, confirmNodes);
+    //         confirmNodes.UnionWith(groupCandidates);
+
+    //         if (groupCandidates.Count >= 1)
+    //         {
+    //             int idx = 0;
+    //             bool isContinue = true;
+    //             do
+    //             {
+    //                 List<int> group;
+    //                 if (idx + _lb - 1 < groupCandidates.Count)
+    //                 {
+    //                     group = groupCandidates.GetRange(idx, _lb);
+    //                 }
+    //                 else
+    //                 {
+    //                     idx = Math.Max(groupCandidates.Count - _lb, 0);
+    //                     group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
+    //                     isContinue = false;
+    //                 }
+
+    //                 _areaIdToAIndex[_area.Count] = _a.Count + idx;
+    //                 foreach (int x in group)
+    //                 {
+    //                     _nodeToAreaId[x].Add(_area.Count);
+    //                 }
+    //                 _area.Add(group);
+
+    //                 idx += 3;
+    //             } while (isContinue);
+
+    //             _a.AddRange(groupCandidates);
+    //         }
+    //     }
+
+    //     ConnectArea();
+    //     MakeAreaGraph();
+    //     _updateAreaCount++;
+    // }
+
+    // private void MakeArea3()
+    // {
+    //     _area = new();
+
+    //     HashSet<int> seen = new() { };
+    //     List<int> nearToCenter = new(Enumerable.Range(0, _n));
+    //     nearToCenter.Sort((a, b) =>
+    //         (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
+    //     );
+    //     WriteLine($"({_x[nearToCenter.First()]}, {_y[nearToCenter.First()]})");
+    //     WriteLine($"({_x[nearToCenter.Last()]}, {_y[nearToCenter.Last()]})");
+
+    //     throw new Exception("実装中");
+    // }
 
     private void AddArea()
     {
@@ -378,9 +482,16 @@ public class Field
         int searchCount = 30;
         for (int _ = 0; _ < searchCount; _++)
         {
-            int id1, id2;
-            do { id1 = new Random().Next(_area.Count); } while (_graph[id1].Count <= 0);
-            do { id2 = new Random().Next(_area.Count); } while (_graph[id2].Count <= 0);
+            int i = new Random().Next(_order.Count - 1);
+            int j = i + 1;
+
+            List<int> shuffleId1 = new(_nodeToAreaId[_order[i]]);
+            shuffleId1.Shuffle();
+            List<int> shuffleId2 = new(_nodeToAreaId[_order[j]]);
+            shuffleId2.Shuffle();
+
+            int id1 = shuffleId1[0];
+            int id2 = shuffleId2[0];
             int length = GetShortestPathAreaToArea(id1, id2).Count;
 
             if (length > maxPathLength)
@@ -861,7 +972,7 @@ public class Program
         }
 
         WriteLine(field.A);
-        // WriteLine(field.Log);
-        WriteLine(field.Illumination());
+        WriteLine(field.Log);
+        // WriteLine(field.Illumination());
     }
 }
