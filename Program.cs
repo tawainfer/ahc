@@ -140,7 +140,8 @@ public class Field
     private List<int> _order;
     private List<int> _x;
     private List<int> _y;
-    private List<List<int>> _graph;
+    // private List<List<int>> _graph;
+    private HashSet<int>[] _graph;
     private List<List<int>> _area;
     private HashSet<int>[] _nodeToAreaId;
     private List<List<int>> _areaGraph;
@@ -171,7 +172,8 @@ public class Field
         _order = DeepCopy.Clone(order);
         _x = DeepCopy.Clone(x);
         _y = DeepCopy.Clone(y);
-        _graph = new();
+        _graph = new HashSet<int>[_n];
+        for (int i = 0; i < _n; i++) _graph[i] = new();
         _area = new();
         _nodeToAreaId = new HashSet<int>[_n];
         for (int i = 0; i < _n; i++) _nodeToAreaId[i] = new();
@@ -187,8 +189,13 @@ public class Field
         _areaIdToAIndex = new();
 
         MakeGraph();
+        // while (SharedStopwatch.ElapsedMilliseconds() <= 1000)
+        // {
+        //     PruneGraph();
+        // }
+
         MakeArea();
-        while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 1750)
+        while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2000)
         {
             AddArea();
         }
@@ -196,15 +203,65 @@ public class Field
 
     private void MakeGraph()
     {
-        _graph = new();
-        for (int _ = 0; _ < _n; _++) _graph.Add(new());
+        _graph = new HashSet<int>[_n];
+        for (int i = 0; i < _n; i++) _graph[i] = new();
 
         for (int i = 0; i < _m; i++)
         {
             _graph[_u[i]].Add(_v[i]);
             _graph[_v[i]].Add(_u[i]);
         }
-        for (int i = 0; i < _n; i++) _graph[i].Sort();
+    }
+
+    private void PruneGraph()
+    {
+        HashSet<int> visitNodes = new(_order);
+        visitNodes.Add(0);
+        HashSet<int> requireNodes = new(_order);
+        requireNodes.Add(0);
+        HashSet<(int From, int To)> findEdges = new();
+
+        int startNode;
+        do { startNode = new Random().Next(_n); } while (!requireNodes.Contains(startNode));
+        HashSet<int> seen = new() { startNode, };
+        LinkedList<(int Node, int Parent)> dq = new();
+        dq.AddLast((startNode, -1));
+
+        while (dq.Count >= 1)
+        {
+            (int node, int parent) = dq.First!.Value;
+            dq.RemoveFirst();
+            requireNodes.Remove(node);
+            findEdges.Add((node, parent));
+            findEdges.Add((parent, node));
+            if (requireNodes.Count <= 0) break;
+
+            foreach (int neighbor in _graph[node])
+            {
+                if (seen.Contains(neighbor)) continue;
+                seen.Add(node);
+                if (requireNodes.Contains(neighbor)) dq.AddFirst((neighbor, node));
+                else dq.AddLast((neighbor, node));
+            }
+        }
+
+        for (int node = 0; node < _n; node++)
+        {
+            List<int> removeNodes = new();
+            foreach (int neighbor in _graph[node])
+            {
+                if (!findEdges.Contains((node, neighbor)) && !findEdges.Contains((neighbor, node)))
+                {
+                    removeNodes.Add(neighbor);
+                }
+            }
+
+            foreach (int removeNode in removeNodes)
+            {
+                _graph[node].Remove(removeNode);
+                // WriteLine($"remove: [{node}][{removeNode}]");
+            }
+        }
     }
 
     private void ConnectArea()
@@ -648,7 +705,7 @@ public class Field
         StringBuilder sb = new();
 
         sb.Append("[_graph]\n");
-        for (int i = 0; i < _graph.Count; i++)
+        for (int i = 0; i < _n; i++)
         {
             sb.Append($"_graph[{i}]: ");
             sb.Append(string.Join(',', _graph[i]));
@@ -796,6 +853,7 @@ public class Program
     private void Solve()
     {
         var field = new Field(_n, _m, _la, _lb, _u, _v, _order, _x, _y);
+        // WriteLine(field);
 
         foreach (int destinationNode in _order)
         {
@@ -803,7 +861,7 @@ public class Program
         }
 
         WriteLine(field.A);
-        WriteLine(field.Log);
-        // WriteLine(field.Illumination());
+        // WriteLine(field.Log);
+        WriteLine(field.Illumination());
     }
 }

@@ -33,7 +33,7 @@ class Result:
 
   def add_wa(self, filename, message):
     self.wa.append((filename, message))
-    self.add.append((filename, message))
+    self.all.append((filename, message))
 
   def to_string(self):
     with io.StringIO() as buf:
