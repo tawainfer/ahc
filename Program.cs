@@ -137,6 +137,7 @@ public class Field
     private int _lb;
     private List<int> _u;
     private List<int> _v;
+    private List<int> _order;
     private List<int> _x;
     private List<int> _y;
     private List<List<int>> _graph;
@@ -159,7 +160,7 @@ public class Field
     public Log Log { get { return _log; } }
     public A A { get { return _a; } }
 
-    public Field(int n, int m, int la, int lb, in List<int> u, in List<int> v, in List<int> x, in List<int> y)
+    public Field(int n, int m, int la, int lb, in List<int> u, in List<int> v, in List<int> order, in List<int> x, in List<int> y)
     {
         _n = n;
         _m = m;
@@ -167,6 +168,7 @@ public class Field
         _lb = lb;
         _u = DeepCopy.Clone(u);
         _v = DeepCopy.Clone(v);
+        _order = DeepCopy.Clone(order);
         _x = DeepCopy.Clone(x);
         _y = DeepCopy.Clone(y);
         _graph = new();
@@ -292,7 +294,7 @@ public class Field
                     }
                     _area.Add(group);
 
-                    idx += _lb / 2;
+                    idx += 3;
                 } while (isContinue);
 
                 _a.AddRange(groupCandidates);
@@ -316,11 +318,12 @@ public class Field
         int maxPathLengthId1 = -1;
         int maxPathLengthId2 = -1;
 
-        int searchCount = 10;
+        int searchCount = 30;
         for (int _ = 0; _ < searchCount; _++)
         {
-            int id1 = new Random().Next(_area.Count);
-            int id2 = new Random().Next(_area.Count);
+            int id1, id2;
+            do { id1 = new Random().Next(_area.Count); } while (_graph[id1].Count <= 0);
+            do { id2 = new Random().Next(_area.Count); } while (_graph[id2].Count <= 0);
             int length = GetShortestPathAreaToArea(id1, id2).Count;
 
             if (length > maxPathLength)
@@ -367,7 +370,7 @@ public class Field
             }
             _area.Add(group);
 
-            idx += _lb / 2;
+            idx += 3;
         } while (isContinue);
 
         _a.AddRange(groupCandidates);
@@ -555,6 +558,8 @@ public class Field
                 var areaToAreaPath = GetShortestPathAreaToArea(startAreaId, destinationAreaId);
                 for (int i = 0; i < areaToAreaPath.Count - 1; i++)
                 {
+                    if (currentNode == _port[(areaToAreaPath[i], areaToAreaPath[i + 1])].NodeFrom) continue;
+
                     if (lastUsedAreaId != areaToAreaPath[i])
                     {
                         log.Add(Sign(areaToAreaPath[i], ref lastUsedAreaId));
@@ -790,7 +795,7 @@ public class Program
 
     private void Solve()
     {
-        var field = new Field(_n, _m, _la, _lb, _u, _v, _x, _y);
+        var field = new Field(_n, _m, _la, _lb, _u, _v, _order, _x, _y);
 
         foreach (int destinationNode in _order)
         {
