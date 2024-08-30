@@ -99,6 +99,7 @@ public class A
     private int _la;
 
     public int Count { get { return _a.Count; } }
+    public int DistinctCount { get { return _h.Count; } }
 
     public A(int la)
     {
@@ -160,7 +161,6 @@ public class Field
     private List<int> _order;
     private List<int> _x;
     private List<int> _y;
-    // private List<List<int>> _graph;
     private HashSet<int>[] _graph;
     private List<List<int>> _area;
     private HashSet<int>[] _nodeToAreaId;
@@ -210,29 +210,7 @@ public class Field
         _areaIdToAIndex = new();
         _tiedNodeByArea = new();
 
-        // long st = SharedStopwatch.ElapsedMilliseconds();
         MakeGraph();
-        // long et = SharedStopwatch.ElapsedMilliseconds();
-        // WriteLine($"MakeGraph(): {et - st}ms");
-        // while (SharedStopwatch.ElapsedMilliseconds() <= 1000)
-        // {
-        //     PruneGraph();
-        // }
-
-        // st = SharedStopwatch.ElapsedMilliseconds();
-        // MakeArea();
-        // et = SharedStopwatch.ElapsedMilliseconds();
-        // WriteLine($"MakeArea(): {et - st}ms");
-        // // MakeArea2();
-        // // MakeArea3();
-
-        // st = SharedStopwatch.ElapsedMilliseconds();
-        // while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2000)
-        // {
-        //     AddArea();
-        // }
-        // et = SharedStopwatch.ElapsedMilliseconds();
-        // WriteLine($"AddArea(): {et - st}ms");
     }
 
     private Field(Field parent)
@@ -282,57 +260,6 @@ public class Field
         }
     }
 
-    private void PruneGraph()
-    {
-        HashSet<int> visitNodes = new(_order);
-        visitNodes.Add(0);
-        HashSet<int> requireNodes = new(_order);
-        requireNodes.Add(0);
-        HashSet<(int From, int To)> findEdges = new();
-
-        int startNode;
-        do { startNode = new Random().Next(_n); } while (!requireNodes.Contains(startNode));
-        HashSet<int> seen = new() { startNode, };
-        LinkedList<(int Node, int Parent)> dq = new();
-        dq.AddLast((startNode, -1));
-
-        while (dq.Count >= 1)
-        {
-            (int node, int parent) = dq.First!.Value;
-            dq.RemoveFirst();
-            requireNodes.Remove(node);
-            findEdges.Add((node, parent));
-            findEdges.Add((parent, node));
-            if (requireNodes.Count <= 0) break;
-
-            foreach (int neighbor in _graph[node])
-            {
-                if (seen.Contains(neighbor)) continue;
-                seen.Add(node);
-                if (requireNodes.Contains(neighbor)) dq.AddFirst((neighbor, node));
-                else dq.AddLast((neighbor, node));
-            }
-        }
-
-        for (int node = 0; node < _n; node++)
-        {
-            List<int> removeNodes = new();
-            foreach (int neighbor in _graph[node])
-            {
-                if (!findEdges.Contains((node, neighbor)) && !findEdges.Contains((neighbor, node)))
-                {
-                    removeNodes.Add(neighbor);
-                }
-            }
-
-            foreach (int removeNode in removeNodes)
-            {
-                _graph[node].Remove(removeNode);
-                // WriteLine($"remove: [{node}][{removeNode}]");
-            }
-        }
-    }
-
     private void ConnectArea()
     {
         for (int id = 0; id < _area.Count; id++)
@@ -371,183 +298,7 @@ public class Field
         }
     }
 
-    private void MakeArea()
-    {
-        _area = new();
-
-        void dfs(int node, List<int> path, ref HashSet<int> seen, ref HashSet<int> confirm)
-        {
-            List<int> farFromCenter = new(_graph[node]);
-            farFromCenter.Sort((a, b) =>
-                (Math.Abs(_x[b]) + Math.Abs(_y[b])) - (Math.Abs(_x[a]) + Math.Abs(_y[a]))
-            );
-
-            foreach (int neighbor in farFromCenter)
-            {
-                if (seen.Contains(neighbor)) continue;
-                seen.Add(neighbor);
-                var newPath = DeepCopy.Clone(path);
-                newPath.Add(neighbor);
-                dfs(neighbor, newPath, ref seen, ref confirm);
-            }
-
-            List<int> groupCandidates = new();
-            while (path.Count >= 1)
-            {
-                if (confirm.Contains(path.Last())) break;
-                confirm.Add(path.Last());
-                groupCandidates.Add(path.Last());
-                path.RemoveAt(path.Count - 1);
-            }
-
-            if (groupCandidates.Count >= 1)
-            {
-                int idx = 0;
-                bool isContinue = true;
-                do
-                {
-                    List<int> group;
-                    if (idx + _lb - 1 < groupCandidates.Count)
-                    {
-                        group = groupCandidates.GetRange(idx, _lb);
-                    }
-                    else
-                    {
-                        idx = Math.Max(groupCandidates.Count - _lb, 0);
-                        group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
-                        isContinue = false;
-                    }
-
-                    _areaIdToAIndex[_area.Count] = _a.Count + idx;
-                    foreach (int x in group)
-                    {
-                        _nodeToAreaId[x].Add(_area.Count);
-                    }
-                    _area.Add(group);
-
-                    idx += 3;
-                } while (isContinue);
-
-                _a.AddRange(groupCandidates);
-            }
-        }
-
-        List<int> nearToCenter = new(Enumerable.Range(0, _n));
-        nearToCenter.Sort((a, b) =>
-            (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
-        );
-
-        int startNode = nearToCenter.First();
-        HashSet<int> seen = new();
-        HashSet<int> confirm = new();
-        dfs(startNode, new() { startNode, }, ref seen, ref confirm);
-
-        // long st = SharedStopwatch.ElapsedMilliseconds();
-        // ConnectArea();
-        // long et = SharedStopwatch.ElapsedMilliseconds();
-        // WriteLine($"ConnectArea(): {et - st}ms");
-
-        // st = SharedStopwatch.ElapsedMilliseconds();
-        // MakeAreaGraph();
-        // et = SharedStopwatch.ElapsedMilliseconds();
-        // WriteLine($"MakeAreaGraph(): {et - st}ms");
-        // _updateAreaCount++;
-        UpdateAreaDependency();
-    }
-
-    // private void MakeArea2()
-    // {
-    //     _area = new();
-
-    //     void dfs(int node, List<int> path, ref HashSet<int> seen, ref List<int> groupCandidates, in HashSet<int> confirmNodes)
-    //     {
-    //         if (path.Count >= groupCandidates.Count) groupCandidates = path;
-    //         if (path.Count >= _lb) return;
-
-    //         List<int> nearToCenter = new(_graph[node]);
-    //         nearToCenter.Sort((a, b) =>
-    //             (Math.Abs(_x[b]) + Math.Abs(_y[b])) - (Math.Abs(_x[a]) + Math.Abs(_y[a]))
-    //         );
-
-    //         foreach (int neighbor in nearToCenter)
-    //         {
-    //             if (seen.Contains(neighbor) || confirmNodes.Contains(neighbor)) continue;
-    //             seen.Add(neighbor);
-    //             var newPath = DeepCopy.Clone(path);
-    //             newPath.Add(neighbor);
-    //             dfs(neighbor, newPath, ref seen, ref groupCandidates, confirmNodes);
-    //         }
-    //     }
-
-
-    //     List<int> farFromCenter = new(Enumerable.Range(0, _n));
-    //     farFromCenter.Sort((a, b) =>
-    //         (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
-    //     );
-
-    //     HashSet<int> confirmNodes = new();
-    //     foreach (int startNode in farFromCenter)
-    //     {
-    //         if (confirmNodes.Contains(startNode)) continue;
-
-    //         List<int> groupCandidates = new();
-    //         HashSet<int> seen = new() { startNode, };
-    //         dfs(startNode, new() { startNode, }, ref seen, ref groupCandidates, confirmNodes);
-    //         confirmNodes.UnionWith(groupCandidates);
-
-    //         if (groupCandidates.Count >= 1)
-    //         {
-    //             int idx = 0;
-    //             bool isContinue = true;
-    //             do
-    //             {
-    //                 List<int> group;
-    //                 if (idx + _lb - 1 < groupCandidates.Count)
-    //                 {
-    //                     group = groupCandidates.GetRange(idx, _lb);
-    //                 }
-    //                 else
-    //                 {
-    //                     idx = Math.Max(groupCandidates.Count - _lb, 0);
-    //                     group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
-    //                     isContinue = false;
-    //                 }
-
-    //                 _areaIdToAIndex[_area.Count] = _a.Count + idx;
-    //                 foreach (int x in group)
-    //                 {
-    //                     _nodeToAreaId[x].Add(_area.Count);
-    //                 }
-    //                 _area.Add(group);
-
-    //                 idx += 3;
-    //             } while (isContinue);
-
-    //             _a.AddRange(groupCandidates);
-    //         }
-    //     }
-
-    //     ConnectArea();
-    //     MakeAreaGraph();
-    //     _updateAreaCount++;
-    // }
-
-    // private void MakeArea3()
-    // {
-    //     _area = new();
-
-    //     HashSet<int> seen = new() { };
-    //     List<int> nearToCenter = new(Enumerable.Range(0, _n));
-    //     nearToCenter.Sort((a, b) =>
-    //         (Math.Abs(_x[a]) + Math.Abs(_y[a])) - (Math.Abs(_x[b]) + Math.Abs(_y[b]))
-    //     );
-    //     WriteLine($"({_x[nearToCenter.First()]}, {_y[nearToCenter.First()]})");
-    //     WriteLine($"({_x[nearToCenter.Last()]}, {_y[nearToCenter.Last()]})");
-
-    //     throw new Exception("実装中");
-    // }
-
-    public void MakeArea4()
+    public void MakeArea()
     {
         bool[] seen = new bool[_n];
         for (int i = 0; i < _n; i++)
@@ -598,83 +349,6 @@ public class Field
     }
 
     public void AddArea()
-    {
-        int remainingCountA = _la - _a.Count;
-        int maxPathLength = int.MinValue;
-        int maxPathLengthId1 = -1;
-        int maxPathLengthId2 = -1;
-
-        int searchCount = 30;
-        for (int _ = 0; _ < searchCount; _++)
-        {
-            int i = new Random().Next(_order.Count - 1);
-            int j = i + 1;
-
-            List<int> shuffleId1 = new(_nodeToAreaId[_order[i]]);
-            shuffleId1.Shuffle();
-            List<int> shuffleId2 = new(_nodeToAreaId[_order[j]]);
-            shuffleId2.Shuffle();
-
-            int id1 = shuffleId1[0];
-            int id2 = shuffleId2[0];
-            int length = GetShortestPathAreaToArea(id1, id2).Count;
-
-            if (length > maxPathLength)
-            {
-                maxPathLength = length;
-                maxPathLengthId1 = id1;
-                maxPathLengthId2 = id2;
-            }
-        }
-
-        List<int> groupCandidates = TrimNodeDuplicatedAreaFromPath(
-            maxPathLengthId1,
-            maxPathLengthId2,
-            GetShortestPathNodeToNode(
-                _area[maxPathLengthId1][0], _area[maxPathLengthId2][0]
-            )
-        );
-
-        while (groupCandidates.Count > remainingCountA)
-        {
-            groupCandidates.RemoveAt(groupCandidates.Count - 1);
-        }
-
-        int idx = 0;
-        bool isContinue = true;
-        do
-        {
-            List<int> group;
-            if (idx + _lb - 1 < groupCandidates.Count)
-            {
-                group = groupCandidates.GetRange(idx, _lb);
-            }
-            else
-            {
-                idx = Math.Max(groupCandidates.Count - _lb, 0);
-                group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
-                isContinue = false;
-            }
-
-            _areaIdToAIndex[_area.Count] = _a.Count + idx;
-            foreach (int x in group)
-            {
-                _nodeToAreaId[x].Add(_area.Count);
-            }
-            _area.Add(group);
-
-            idx += 3;
-        } while (isContinue);
-
-        _a.AddRange(groupCandidates);
-
-        // ConnectArea();
-        // MakeAreaGraph();
-        // _updateAreaCount++;
-        UpdateAreaDependency();
-    }
-
-    public void AddArea2()
     {
         int remainingCountA = _la - _a.Count;
         int maxPathLength = int.MinValue;
@@ -747,9 +421,6 @@ public class Field
 
         _a.AddRange(groupCandidates);
 
-        // ConnectArea();
-        // MakeAreaGraph();
-        // _updateAreaCount++;
         UpdateAreaDependency();
     }
 
@@ -914,7 +585,7 @@ public class Field
         return log;
     }
 
-    public Log Move(int destinationNode, bool simulation = false, bool ignoreArea = false)
+    public Log Move(int destinationNode, bool simulation = false)
     {
         int minScore = int.MaxValue;
         Log minScoreLog = new();
@@ -1001,13 +672,15 @@ public class Field
         return minScoreLog;
     }
 
-    public int TieNodeByArea(int nodeFrom, int nodeTo)
+    public int TieNodeByArea(int nodeFrom, int nodeTo, bool allowOverwrite = false, bool perfectFit = false)
     {
         var groupCandidates = GetShortestPathNodeToNode(nodeFrom, nodeTo);
         groupCandidates = groupCandidates.GetRange(1, groupCandidates.Count - 1);
 
+        if (perfectFit && groupCandidates.Count % _lb != 0 && groupCandidates.Count <= _lb) return -1;
         if (groupCandidates.Count + _a.Count > _la) return -1;
-        if (groupCandidates.Any(_a.Contains)) return -1;
+        if (_la - _a.Count - (_n - _a.DistinctCount) - groupCandidates.Count < 0) return -1;
+        if (!allowOverwrite && groupCandidates.Any(_a.Contains)) return -1;
         if (_tiedNodeByArea.Contains((nodeFrom, nodeTo))) return -1;
         _tiedNodeByArea.Add((nodeFrom, nodeTo));
 
@@ -1184,67 +857,44 @@ public class Program
         }
     }
 
-    // private void Solve()
-    // {
-    //     int minScore = int.MaxValue;
-    //     Field? minScoreField = null;
-    //     while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
-    //     {
-    //         List<int> scores = new();
-    //         var field = new Field(_n, _m, _la, _lb, _u, _v, _x, _y);
-    //         foreach (int destinationNode in _order)
-    //         {
-    //             scores.Add(field.Move(destinationNode).Score);
-    //         }
-    //         // WriteLine(string.Join(',', scores));
-
-    //         int score = scores.Sum();
-    //         if (scores.Sum() < minScore)
-    //         {
-    //             WriteLine($"{minScore} => {score}");
-    //             minScore = score;
-    //             minScoreField = field;
-    //         }
-
-    //         WriteLine($"{SharedStopwatch.ElapsedMilliseconds()}ms"); // debug
-    //     }
-
-    //     WriteLine(minScoreField!.A);
-    //     WriteLine(minScoreField!.Log);
-    // }
-
     private void Solve()
     {
         var field = new Field(_n, _m, _la, _lb, _u, _v, _order, _x, _y);
-        // WriteLine(field);
 
-        long st1 = SharedStopwatch.ElapsedMilliseconds();
-        while (SharedStopwatch.ElapsedMilliseconds() <= st1 + 500)
+        List<int> idx = new();
+        for (int i = 0; i < _order.Count - 1; i++)
         {
-            int i = new Random().Next(_order.Count - 1);
-            int j = i + 1;
-            field.TieNodeByArea(_order[i], _order[j]);
+            int result = field.TieNodeByArea(_order[i], _order[i + 1], true, true);
+            if (result == -1) idx.Add(i);
         }
-        field.UpdateAreaDependency();
-
-        field.MakeArea4();
 
         Field? bestField = null;
-        while (SharedStopwatch.ElapsedMilliseconds() <= 2800)
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2900)
         {
             var copyField = field.Clone();
-            while (copyField.A.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2800)
+            idx.Shuffle();
+
+            foreach (int i in idx)
             {
-                copyField.AddArea2();
+                if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
+                copyField.TieNodeByArea(_order[i], _order[i + 1], true);
+            }
+
+            if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
+            copyField.MakeArea();
+
+            while (copyField.A.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2900)
+            {
+                copyField.AddArea();
             }
 
             foreach (int destinationNode in _order)
             {
-                if (SharedStopwatch.ElapsedMilliseconds() > 2800) break;
+                if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
                 copyField.Move(destinationNode);
             }
 
-            if (SharedStopwatch.ElapsedMilliseconds() > 2800) break;
+            if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
             if (copyField.Score < (bestField?.Score ?? int.MaxValue))
             {
                 // WriteLine($"update({SharedStopwatch.ElapsedMilliseconds()}ms) {bestField?.Score ?? int.MaxValue} => {copyField.Score}");
@@ -1256,19 +906,8 @@ public class Program
             }
         }
 
-        // long st2 = SharedStopwatch.ElapsedMilliseconds();
-        // while (SharedStopwatch.ElapsedMilliseconds() <= st2 + 1500)
-        // {
-        //     field.AddArea();
-        // }
-
-        // foreach (int destinationNode in _order)
-        // {
-        //     field.Move(destinationNode);
-        // }
-
         WriteLine(bestField!.A);
         WriteLine(bestField!.Log);
-        // WriteLine(field.Illumination());
+        // WriteLine(bestField.Illumination());
     }
 }
