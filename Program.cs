@@ -95,6 +95,7 @@ public class Log
 public class A
 {
     private List<int> _a;
+    private HashSet<int> _h;
     private int _la;
 
     public int Count { get { return _a.Count; } }
@@ -102,18 +103,37 @@ public class A
     public A(int la)
     {
         _a = new();
+        _h = new();
         _la = la;
+    }
+
+    private A(A parent)
+    {
+        _a = DeepCopy.Clone(parent._a);
+        _h = DeepCopy.Clone(parent._h);
+        _la = parent._la;
+    }
+
+    public A Clone()
+    {
+        return new A(this);
     }
 
     public void Add(int x)
     {
         if (_a.Count >= _la) throw new Exception("Aの長さが_laより大きくなりました");
         _a.Add(x);
+        _h.Add(x);
     }
 
     public void AddRange(List<int> l)
     {
         foreach (int x in l) Add(x);
+    }
+
+    public bool Contains(int x)
+    {
+        return _h.Contains(x);
     }
 
     public override string ToString()
@@ -156,6 +176,7 @@ public class Field
     private Dictionary<int, int> _areaIdToAIndex;
     private int _lastUsedAreaId = -1;
     private int _updateAreaCount = 0;
+    private HashSet<(int NodeFrom, int NodeTo)> _tiedNodeByArea;
 
     public int Score { get { return _log.Score; } }
     public Log Log { get { return _log; } }
@@ -187,20 +208,66 @@ public class Field
         _b = new int[_lb];
         Array.Fill(_b, -1);
         _areaIdToAIndex = new();
+        _tiedNodeByArea = new();
 
+        // long st = SharedStopwatch.ElapsedMilliseconds();
         MakeGraph();
+        // long et = SharedStopwatch.ElapsedMilliseconds();
+        // WriteLine($"MakeGraph(): {et - st}ms");
         // while (SharedStopwatch.ElapsedMilliseconds() <= 1000)
         // {
         //     PruneGraph();
         // }
 
-        MakeArea();
-        // MakeArea2();
-        // MakeArea3();
-        while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2000)
-        {
-            AddArea();
-        }
+        // st = SharedStopwatch.ElapsedMilliseconds();
+        // MakeArea();
+        // et = SharedStopwatch.ElapsedMilliseconds();
+        // WriteLine($"MakeArea(): {et - st}ms");
+        // // MakeArea2();
+        // // MakeArea3();
+
+        // st = SharedStopwatch.ElapsedMilliseconds();
+        // while (_a.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2000)
+        // {
+        //     AddArea();
+        // }
+        // et = SharedStopwatch.ElapsedMilliseconds();
+        // WriteLine($"AddArea(): {et - st}ms");
+    }
+
+    private Field(Field parent)
+    {
+        _n = parent._n;
+        _m = parent._m;
+        _la = parent._la;
+        _lb = parent._lb;
+        _u = DeepCopy.Clone(parent._u);
+        _v = DeepCopy.Clone(parent._v);
+        _order = DeepCopy.Clone(parent._order);
+        _x = DeepCopy.Clone(parent._x);
+        _y = DeepCopy.Clone(parent._y);
+        _graph = DeepCopy.Clone(parent._graph);
+        _area = DeepCopy.Clone(parent._area);
+        _nodeToAreaId = DeepCopy.Clone(parent._nodeToAreaId);
+        _areaGraph = DeepCopy.Clone(parent._areaGraph);
+        _port = new();
+        foreach (var kvp in parent._port) _port[kvp.Key] = kvp.Value;
+        _log = DeepCopy.Clone(parent._log);
+        _shortestPathNodeToNode = new();
+        foreach (var kvp in parent._shortestPathNodeToNode) _shortestPathNodeToNode[kvp.Key] = kvp.Value;
+        _shortestPathInArea = new();
+        foreach (var kvp in parent._shortestPathInArea) _shortestPathInArea[kvp.Key] = kvp.Value;
+        _shortestPathAreaToArea = new();
+        foreach (var kvp in parent._shortestPathAreaToArea) _shortestPathAreaToArea[kvp.Key] = kvp.Value;
+        _a = parent._a.Clone();
+        _b = DeepCopy.Clone(parent._b);
+        _areaIdToAIndex = DeepCopy.Clone(parent._areaIdToAIndex);
+        _tiedNodeByArea = DeepCopy.Clone(parent._tiedNodeByArea);
+    }
+
+    public Field Clone()
+    {
+        return new Field(this);
     }
 
     private void MakeGraph()
@@ -375,9 +442,17 @@ public class Field
         HashSet<int> confirm = new();
         dfs(startNode, new() { startNode, }, ref seen, ref confirm);
 
-        ConnectArea();
-        MakeAreaGraph();
-        _updateAreaCount++;
+        // long st = SharedStopwatch.ElapsedMilliseconds();
+        // ConnectArea();
+        // long et = SharedStopwatch.ElapsedMilliseconds();
+        // WriteLine($"ConnectArea(): {et - st}ms");
+
+        // st = SharedStopwatch.ElapsedMilliseconds();
+        // MakeAreaGraph();
+        // et = SharedStopwatch.ElapsedMilliseconds();
+        // WriteLine($"MakeAreaGraph(): {et - st}ms");
+        // _updateAreaCount++;
+        UpdateAreaDependency();
     }
 
     // private void MakeArea2()
@@ -472,7 +547,57 @@ public class Field
     //     throw new Exception("実装中");
     // }
 
-    private void AddArea()
+    public void MakeArea4()
+    {
+        bool[] seen = new bool[_n];
+        for (int i = 0; i < _n; i++)
+        {
+            if (_a.Contains(i))
+            {
+                seen[i] = true;
+            }
+        }
+
+        List<int> idx = new();
+        for (int i = 0; i < _n; i++) idx.Add(i);
+        idx.Shuffle();
+
+        foreach (int i in idx)
+        {
+            if (seen[i]) continue;
+            seen[i] = true;
+
+            Queue<int> q = new();
+            q.Enqueue(i);
+
+            List<int> group = new() { i, };
+            while (q.Count >= 1 && group.Count < _lb)
+            {
+                int cp = q.Dequeue();
+
+                foreach (int ep in _graph[cp])
+                {
+                    if (group.Count + 1 > _lb) break;
+                    if (seen[ep]) continue;
+                    seen[ep] = true;
+                    group.Add(ep);
+                    q.Enqueue(ep);
+                }
+            }
+
+            _areaIdToAIndex[_area.Count] = _a.Count;
+            foreach (int x in group)
+            {
+                _nodeToAreaId[x].Add(_area.Count);
+            }
+            _area.Add(group);
+            _a.AddRange(group);
+        }
+
+        UpdateAreaDependency();
+    }
+
+    public void AddArea()
     {
         int remainingCountA = _la - _a.Count;
         int maxPathLength = int.MinValue;
@@ -543,9 +668,89 @@ public class Field
 
         _a.AddRange(groupCandidates);
 
-        ConnectArea();
-        MakeAreaGraph();
-        _updateAreaCount++;
+        // ConnectArea();
+        // MakeAreaGraph();
+        // _updateAreaCount++;
+        UpdateAreaDependency();
+    }
+
+    public void AddArea2()
+    {
+        int remainingCountA = _la - _a.Count;
+        int maxPathLength = int.MinValue;
+        int maxPathLengthId1 = -1;
+        int maxPathLengthId2 = -1;
+
+        int maxSearchCount = 5;
+        for (int _ = 0; _ < maxSearchCount; _++)
+        {
+            int i = new Random().Next(_order.Count - 1);
+            int j = i + 1;
+
+            List<int> shuffleId1 = new(_nodeToAreaId[_order[i]]);
+            shuffleId1.Shuffle();
+            List<int> shuffleId2 = new(_nodeToAreaId[_order[j]]);
+            shuffleId2.Shuffle();
+
+            int id1 = shuffleId1[0];
+            int id2 = shuffleId2[0];
+            int length = GetShortestPathAreaToArea(id1, id2).Count;
+
+            if (length > maxPathLength)
+            {
+                maxPathLength = length;
+                maxPathLengthId1 = id1;
+                maxPathLengthId2 = id2;
+            }
+        }
+
+        if (maxPathLength == int.MinValue) return;
+
+        List<int> groupCandidates = TrimNodeDuplicatedAreaFromPath(
+            maxPathLengthId1,
+            maxPathLengthId2,
+            GetShortestPathNodeToNode(
+                _area[maxPathLengthId1][0], _area[maxPathLengthId2][0]
+            )
+        );
+
+        while (groupCandidates.Count > remainingCountA)
+        {
+            groupCandidates.RemoveAt(groupCandidates.Count - 1);
+        }
+
+        int idx = 0;
+        bool isContinue = true;
+        do
+        {
+            List<int> group;
+            if (idx + _lb - 1 < groupCandidates.Count)
+            {
+                group = groupCandidates.GetRange(idx, _lb);
+            }
+            else
+            {
+                idx = Math.Max(groupCandidates.Count - _lb, 0);
+                group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
+                isContinue = false;
+            }
+
+            _areaIdToAIndex[_area.Count] = _a.Count + idx;
+            foreach (int x in group)
+            {
+                _nodeToAreaId[x].Add(_area.Count);
+            }
+            _area.Add(group);
+
+            idx += 3;
+        } while (isContinue);
+
+        _a.AddRange(groupCandidates);
+
+        // ConnectArea();
+        // MakeAreaGraph();
+        // _updateAreaCount++;
+        UpdateAreaDependency();
     }
 
     private List<int> TrimNodeDuplicatedAreaFromPath(int startId, int endId, in List<int> path)
@@ -796,6 +1001,53 @@ public class Field
         return minScoreLog;
     }
 
+    public int TieNodeByArea(int nodeFrom, int nodeTo)
+    {
+        var groupCandidates = GetShortestPathNodeToNode(nodeFrom, nodeTo);
+        groupCandidates = groupCandidates.GetRange(1, groupCandidates.Count - 1);
+
+        if (groupCandidates.Count + _a.Count > _la) return -1;
+        if (groupCandidates.Any(_a.Contains)) return -1;
+        if (_tiedNodeByArea.Contains((nodeFrom, nodeTo))) return -1;
+        _tiedNodeByArea.Add((nodeFrom, nodeTo));
+
+        int idx = 0;
+        bool isContinue = true;
+        do
+        {
+            List<int> group;
+            if (idx + _lb - 1 < groupCandidates.Count)
+            {
+                group = groupCandidates.GetRange(idx, _lb);
+            }
+            else
+            {
+                idx = Math.Max(groupCandidates.Count - _lb, 0);
+                group = groupCandidates.GetRange(idx, Math.Min(groupCandidates.Count - idx, _lb));
+                isContinue = false;
+            }
+
+            _areaIdToAIndex[_area.Count] = _a.Count + idx;
+            foreach (int x in group)
+            {
+                _nodeToAreaId[x].Add(_area.Count);
+            }
+            _area.Add(group);
+
+            idx += 3;
+        } while (isContinue);
+
+        _a.AddRange(groupCandidates);
+        return groupCandidates.Count;
+    }
+
+    public void UpdateAreaDependency()
+    {
+        ConnectArea();
+        MakeAreaGraph();
+        _updateAreaCount++;
+    }
+
     public Log Illumination()
     {
         Log log = new();
@@ -966,13 +1218,57 @@ public class Program
         var field = new Field(_n, _m, _la, _lb, _u, _v, _order, _x, _y);
         // WriteLine(field);
 
-        foreach (int destinationNode in _order)
+        long st1 = SharedStopwatch.ElapsedMilliseconds();
+        while (SharedStopwatch.ElapsedMilliseconds() <= st1 + 500)
         {
-            field.Move(destinationNode);
+            int i = new Random().Next(_order.Count - 1);
+            int j = i + 1;
+            field.TieNodeByArea(_order[i], _order[j]);
+        }
+        field.UpdateAreaDependency();
+
+        field.MakeArea4();
+
+        Field? bestField = null;
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2800)
+        {
+            var copyField = field.Clone();
+            while (copyField.A.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2800)
+            {
+                copyField.AddArea2();
+            }
+
+            foreach (int destinationNode in _order)
+            {
+                if (SharedStopwatch.ElapsedMilliseconds() > 2800) break;
+                copyField.Move(destinationNode);
+            }
+
+            if (SharedStopwatch.ElapsedMilliseconds() > 2800) break;
+            if (copyField.Score < (bestField?.Score ?? int.MaxValue))
+            {
+                // WriteLine($"update({SharedStopwatch.ElapsedMilliseconds()}ms) {bestField?.Score ?? int.MaxValue} => {copyField.Score}");
+                bestField = copyField;
+            }
+            else
+            {
+                // WriteLine($"no update({SharedStopwatch.ElapsedMilliseconds()}ms) {bestField?.Score ?? int.MaxValue} => {copyField.Score}");
+            }
         }
 
-        WriteLine(field.A);
-        WriteLine(field.Log);
+        // long st2 = SharedStopwatch.ElapsedMilliseconds();
+        // while (SharedStopwatch.ElapsedMilliseconds() <= st2 + 1500)
+        // {
+        //     field.AddArea();
+        // }
+
+        // foreach (int destinationNode in _order)
+        // {
+        //     field.Move(destinationNode);
+        // }
+
+        WriteLine(bestField!.A);
+        WriteLine(bestField!.Log);
         // WriteLine(field.Illumination());
     }
 }
