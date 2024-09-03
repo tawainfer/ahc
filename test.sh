@@ -14,7 +14,7 @@ then
   testcase=$1
 fi
 
-dotnet build
+dotnet publish -c Test
 if [ $? -ne 0 ]; then
   exit 1
 fi
@@ -47,7 +47,7 @@ do
 
   count=$((count + 1))
   echo "${file} (${count}/${testcase})"
-  python input.py "${file}" | dotnet run > "./out/${result_dir}/${file}"
+  python input.py "${file}" | './bin/Test/net7.0/linux-x64/publish/ahc036' > "./out/${result_dir}/${file}"
 
   cd tools
   cargo run --quiet --bin vis "../in/${file}" "../out/${result_dir}/${file}"
