@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+﻿﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using static System.Console;
@@ -31,10 +31,13 @@ public static class DeepCopy
 public static class SharedStopwatch
 {
     private static Stopwatch _stopwatch = new Stopwatch();
+    private static double _frequency = Stopwatch.Frequency;
+
     public static void Start() => _stopwatch.Start();
     public static void Stop() => _stopwatch.Stop();
     public static void Reset() => _stopwatch.Reset();
     public static long ElapsedMilliseconds() => _stopwatch.ElapsedMilliseconds;
+    public static long ElapsedMicroseconds() => (long)(_stopwatch.ElapsedTicks / _frequency * 1_000_000);
 }
 
 public class Log
@@ -164,7 +167,7 @@ public class Field
     private HashSet<int>[] _graph;
     private List<List<int>> _area;
     private HashSet<int>[] _nodeToAreaId;
-    private List<List<int>> _areaGraph;
+    private List<HashSet<int>> _areaGraph;
     private Dictionary<(int AreaIdFrom, int AreaIdTo), (int NodeFrom, int NodeTo)> _port;
     private int _currentNode = 0;
     private Log _log;
@@ -175,12 +178,13 @@ public class Field
     private int[] _b;
     private Dictionary<int, int> _areaIdToAIndex;
     private int _lastUsedAreaId = -1;
-    private int _updateAreaCount = 0;
+    private int _lastUpdatedAreaCount = 0;
     private HashSet<(int NodeFrom, int NodeTo)> _tiedNodeByArea;
 
     public int Score { get { return _log.Score; } }
     public Log Log { get { return _log; } }
     public A A { get { return _a; } }
+    public List<List<int>> Area { get { return _area; } }
 
     public Field(int n, int m, int la, int lb, in List<int> u, in List<int> v, in List<int> order, in List<int> x, in List<int> y)
     {
@@ -241,6 +245,9 @@ public class Field
         _b = DeepCopy.Clone(parent._b);
         _areaIdToAIndex = DeepCopy.Clone(parent._areaIdToAIndex);
         _tiedNodeByArea = DeepCopy.Clone(parent._tiedNodeByArea);
+        _currentNode = parent._currentNode;
+        _lastUsedAreaId = parent._lastUsedAreaId;
+        _lastUpdatedAreaCount = parent._lastUpdatedAreaCount;
     }
 
     public Field Clone()
@@ -262,43 +269,30 @@ public class Field
 
     private void ConnectArea()
     {
-        for (int id = 0; id < _area.Count; id++)
+        while (_areaGraph.Count < _area.Count) _areaGraph.Add(new());
+
+        for (int newId = _lastUpdatedAreaCount; newId < _area.Count; newId++)
         {
-            foreach (int cp in _area[id])
+            HashSet<int> seenNode = new(_area[newId]);
+            foreach (int node in _area[newId])
             {
-                foreach (int ep in _graph[cp])
+                foreach (int neighbor in _graph[node])
                 {
-                    foreach (int id1 in _nodeToAreaId[cp])
+                    if (seenNode.Contains(neighbor)) continue;
+                    _areaGraph[newId].UnionWith(_nodeToAreaId[neighbor]);
+
+                    foreach (int otherId in _nodeToAreaId[neighbor])
                     {
-                        foreach (int id2 in _nodeToAreaId[ep])
-                        {
-                            _port[(id1, id2)] = (cp, ep);
-                        }
+                        _areaGraph[otherId].Add(newId);
+                        _port[(newId, otherId)] = (node, neighbor);
+                        _port[(otherId, newId)] = (neighbor, node);
                     }
                 }
             }
         }
     }
 
-    private void MakeAreaGraph()
-    {
-        _areaGraph = new();
-        for (int _ = 0; _ < _area.Count; _++) _areaGraph.Add(new());
-
-        for (int id1 = 0; id1 < _area.Count; id1++)
-        {
-            for (int id2 = id1 + 1; id2 < _area.Count; id2++)
-            {
-                if (_port.ContainsKey((id1, id2)))
-                {
-                    _areaGraph[id1].Add(id2);
-                    _areaGraph[id2].Add(id1);
-                }
-            }
-        }
-    }
-
-    public void MakeArea()
+    public void FillArea()
     {
         bool[] seen = new bool[_n];
         for (int i = 0; i < _n; i++)
@@ -361,6 +355,8 @@ public class Field
             int i = new Random().Next(_order.Count - 1);
             int j = i + 1;
 
+            if (_nodeToAreaId[_order[i]].Count <= 0 || _nodeToAreaId[_order[j]].Count <= 0) continue;
+
             List<int> shuffleId1 = new(_nodeToAreaId[_order[i]]);
             shuffleId1.Shuffle();
             List<int> shuffleId2 = new(_nodeToAreaId[_order[j]]);
@@ -368,7 +364,10 @@ public class Field
 
             int id1 = shuffleId1[0];
             int id2 = shuffleId2[0];
-            int length = GetShortestPathAreaToArea(id1, id2).Count;
+
+            int length;
+            try { length = GetShortestPathAreaToArea(id1, id2).Count; }
+            catch { continue; }
 
             if (length > maxPathLength)
             {
@@ -485,7 +484,7 @@ public class Field
     private List<int> GetShortestPathInArea(int id, int nodeFrom, int nodeTo)
     {
         if (_shortestPathInArea.ContainsKey((id, nodeFrom, nodeTo))
-            && _shortestPathInArea[(id, nodeFrom, nodeTo)].UpdateAreaCount == _updateAreaCount)
+            && _shortestPathInArea[(id, nodeFrom, nodeTo)].UpdateAreaCount == _lastUpdatedAreaCount)
         {
             return DeepCopy.Clone(_shortestPathInArea[(id, nodeFrom, nodeTo)].Path);
         }
@@ -509,11 +508,11 @@ public class Field
             (int node, List<int> path) = q.Dequeue();
 
             if (!_shortestPathInArea.ContainsKey((id, nodeFrom, node))
-                || _shortestPathInArea[(id, nodeFrom, node)].UpdateAreaCount != _updateAreaCount)
+                || _shortestPathInArea[(id, nodeFrom, node)].UpdateAreaCount != _lastUpdatedAreaCount)
             {
                 _shortestPathInArea[(id, nodeFrom, node)] = (
                     DeepCopy.Clone(path),
-                    _updateAreaCount
+                    _lastUpdatedAreaCount
                 );
             }
 
@@ -536,7 +535,7 @@ public class Field
     private List<int> GetShortestPathAreaToArea(int idFrom, int idTo)
     {
         if (_shortestPathAreaToArea.ContainsKey((idFrom, idTo))
-            && _shortestPathAreaToArea[(idFrom, idTo)].UpdateAreaCount == _updateAreaCount)
+            && _shortestPathAreaToArea[(idFrom, idTo)].UpdateAreaCount == _lastUpdatedAreaCount)
         {
             return DeepCopy.Clone(_shortestPathAreaToArea[(idFrom, idTo)].Path);
         }
@@ -545,16 +544,17 @@ public class Field
         Queue<(int Node, List<int> Path)> q = new();
         q.Enqueue((idFrom, new() { idFrom, }));
 
+        bool stopSearch = false;
         while (q.Count >= 1)
         {
             (int node, List<int> path) = q.Dequeue();
 
             if (!_shortestPathAreaToArea.ContainsKey((idFrom, node))
-                || _shortestPathAreaToArea[(idFrom, node)].UpdateAreaCount != _updateAreaCount)
+                || _shortestPathAreaToArea[(idFrom, node)].UpdateAreaCount != _lastUpdatedAreaCount)
             {
                 _shortestPathAreaToArea[(idFrom, node)] = (
                     DeepCopy.Clone(path),
-                    _updateAreaCount
+                    _lastUpdatedAreaCount
                 );
             }
 
@@ -562,11 +562,13 @@ public class Field
 
             foreach (int neighbor in _areaGraph[node])
             {
+                if (stopSearch) break;
                 if (seen.Contains(neighbor)) continue;
                 seen.Add(neighbor);
                 var newPath = DeepCopy.Clone(path);
                 newPath.Add(neighbor);
                 q.Enqueue((neighbor, newPath));
+                if (neighbor == idTo) stopSearch = true;
             }
         }
 
@@ -717,8 +719,7 @@ public class Field
     public void UpdateAreaDependency()
     {
         ConnectArea();
-        MakeAreaGraph();
-        _updateAreaCount++;
+        _lastUpdatedAreaCount = _area.Count;
     }
 
     public Log Illumination()
@@ -774,30 +775,6 @@ public class Field
             sb.Append(string.Join(',', _areaGraph[i]));
             sb.Append("\n");
         }
-
-        // int maxCountAreaToArea = int.MinValue;
-        // for (int i = 0; i < _area.Count; i++)
-        // {
-        //     for (int j = 0; j < _area.Count; j++)
-        //     {
-        //         maxCountAreaToArea = Math.Max(_shortestPathAreaToArea[(i, j)].Count, maxCountAreaToArea);
-        //     }
-        // }
-        // sb.Append($"maxCountAreaToArea: {maxCountAreaToArea}\n");
-
-        // int maxCountInArea = int.MinValue;
-        // for (int id = 0; id < _area.Count; id++)
-        // {
-        //     for (int cp = 0; cp < _n; cp++)
-        //     {
-        //         for (int ep = 0; ep < _n; ep++)
-        //         {
-        //             if (!_shortestPathInArea[id].ContainsKey((cp, ep))) continue;
-        //             maxCountInArea = Math.Max(_shortestPathInArea[id][(cp, ep)].Count, maxCountInArea);
-        //         }
-        //     }
-        // }
-        // sb.Append($"maxCountInArea: {maxCountInArea}\n");
 
         return sb.ToString();
     }
@@ -867,47 +844,42 @@ public class Program
             int result = field.TieNodeByArea(_order[i], _order[i + 1], true, true);
             if (result == -1) idx.Add(i);
         }
+        field.FillArea();
+        field.UpdateAreaDependency();
 
         Field? bestField = null;
-        while (SharedStopwatch.ElapsedMilliseconds() <= 2900)
+        int maxTurn = 300;
+        while (SharedStopwatch.ElapsedMilliseconds() <= 2500)
         {
             var copyField = field.Clone();
-            idx.Shuffle();
 
-            foreach (int i in idx)
-            {
-                if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
-                copyField.TieNodeByArea(_order[i], _order[i + 1], true);
-            }
-
-            if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
-            copyField.MakeArea();
-
-            while (copyField.A.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2900)
+            while (copyField.A.Count < _la && SharedStopwatch.ElapsedMilliseconds() <= 2500)
             {
                 copyField.AddArea();
             }
 
-            foreach (int destinationNode in _order)
+            for (int i = 0; i < maxTurn; i++)
             {
-                if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
+                int destinationNode = _order[i];
+                if (SharedStopwatch.ElapsedMilliseconds() > 2500) break;
                 copyField.Move(destinationNode);
             }
 
-            if (SharedStopwatch.ElapsedMilliseconds() > 2900) break;
+            if (SharedStopwatch.ElapsedMilliseconds() > 2500) break;
             if (copyField.Score < (bestField?.Score ?? int.MaxValue))
             {
-                // WriteLine($"update({SharedStopwatch.ElapsedMilliseconds()}ms) {bestField?.Score ?? int.MaxValue} => {copyField.Score}");
                 bestField = copyField;
             }
-            else
-            {
-                // WriteLine($"no update({SharedStopwatch.ElapsedMilliseconds()}ms) {bestField?.Score ?? int.MaxValue} => {copyField.Score}");
-            }
+        }
+
+        for (int i = maxTurn; i < _order.Count; i++)
+        {
+            int destinationNode = _order[i];
+            bestField!.Move(destinationNode);
         }
 
         WriteLine(bestField!.A);
         WriteLine(bestField!.Log);
-        // WriteLine(bestField.Illumination());
     }
 }
+
