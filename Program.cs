@@ -119,6 +119,12 @@ public class Factory
         return UnfinishedCount == 0;
     }
 
+    public void SortDrink()
+    {
+        _finishedList.Sort();
+        _unfinishedList.Sort();
+    }
+
     public bool SimpleAction()
     {
         if (IsDone()) return false;
