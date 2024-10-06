@@ -328,26 +328,51 @@ public class RobotArm
     }
 }
 
+public struct Cell
+{
+    public int Y { get; set; }
+    public int X { get; set; }
+    public bool ItemExists { get; set; }
+    public bool IsDestination { get; set; }
+
+    public Cell(int y, int x, bool itemExists, bool isDestination)
+    {
+        Y = y;
+        X = x;
+        ItemExists = itemExists;
+        IsDestination = isDestination;
+    }
+
+    public override string ToString()
+    {
+        return $"({Y},{X}) {(ItemExists ? "Item" : "")} {(IsDestination ? "Dest" : "")}";
+    }
+}
+
 public class Field
 {
     private int _n;
-    private bool[,] _current;
     private HashSet<(int Y, int X)> _finished;
     private HashSet<(int Y, int X)> _unfinished;
+    private bool[,] _current;
+    private readonly bool[,] _goal;
     private readonly RobotArm _arm;
     private readonly string _initLog;
     private List<char[]> _log;
 
+    public int N { get { return _n; } }
+    // public IReadOnlyCollection<(int Y, int X)> Finished { get { return _finished; } }
+    // public IReadOnlyCollection<(int Y, int X)> Unfinished { get { return _unfinished; } }
     public int Turn { get { return _log.Count; } }
 
     public Field(int n, in bool[,] s, in bool[,] t, in RobotArm arm)
     {
         _n = n;
 
-        _current = new bool[_n, _n];
         _finished = new();
         _unfinished = new();
 
+        _current = new bool[_n, _n];
         for (int i = 0; i < _n; i++)
         {
             for (int j = 0; j < _n; j++)
@@ -366,6 +391,8 @@ public class Field
                 }
             }
         }
+
+        _goal = t;
 
         _arm = arm.DeepCopy();
 
@@ -394,6 +421,16 @@ public class Field
         return (0 <= ny && ny < _n && 0 <= nx && nx < _n);
     }
 
+    public Node this[int i] { get { return _arm[i]; } }
+
+    public Cell this[int y, int x]
+    {
+        get
+        {
+            return new Cell(y, x, _current[y, x], _goal[y, x]);
+        }
+    }
+
     public bool CanMoveArm(char c)
     {
         switch (c)
@@ -406,8 +443,10 @@ public class Field
                 return CanMoveArm(0, -1);
             case 'R':
                 return CanMoveArm(0, 1);
+            case '.':
+                return true;
             default:
-                throw new Exception("不正な命令です");
+                throw new Exception($"不正な命令です({c})");
         }
     }
 
@@ -437,8 +476,11 @@ public class Field
             case 'R':
                 MoveArm(0, 1);
                 break;
+            case '.':
+                // MoveArm(0, 0);
+                break;
             default:
-                throw new Exception("不正な命令です");
+                throw new Exception($"不正な命令です({c})");
         }
     }
 
@@ -568,6 +610,11 @@ public class Field
         _log.Add(operation);
     }
 
+    public void Operate(string operation)
+    {
+        Operate(operation.ToArray());
+    }
+
     public override string ToString()
     {
         StringBuilder sb = new StringBuilder();
@@ -650,7 +697,8 @@ public class Program
         SharedStopwatch.Start();
         Input();
 
-        Sample();
+        // Sample();
+        Greedy();
     }
 
     public void Input()
@@ -702,6 +750,67 @@ public class Program
 
         // field.Operate("D.....PP".ToArray());
         // WriteLine(field);
+
+        field.PrintLog();
+    }
+
+    public void Greedy()
+    {
+        int[] dy = new int[] { -1, 0, 1, 0 };
+        int[] dx = new int[] { 0, 1, 0, -1 };
+
+        var arm = new RobotArm();
+        arm.SetRootPosition(0, 0);
+
+        var field = new Field(_n, _s, _t, arm);
+
+        while (!field.IsDone())
+        {
+            var rootNode = field[0];
+
+            HashSet<(int Y, int X)> seen = new() { (rootNode.Y, rootNode.X), };
+            Queue<(int Y, int X)> q = new();
+            q.Enqueue((rootNode.Y, rootNode.X));
+
+            (int Y, int X) targetNode = (int.MinValue, int.MinValue);
+            while (q.Count >= 1)
+            {
+                (int cy, int cx) = q.Dequeue();
+                var cell = field[cy, cx];
+                if (rootNode.IsGrabbed && !cell.ItemExists && cell.IsDestination
+                    || !rootNode.IsGrabbed && cell.ItemExists && !cell.IsDestination)
+                {
+                    targetNode = (cy, cx);
+                    break;
+                }
+
+                for (int i = 0; i < 4; i++)
+                {
+                    int ey = cy + dy[i];
+                    int ex = cx + dx[i];
+                    if (ey < 0 || ey >= field.N || ex < 0 || ex >= field.N) continue;
+                    if (seen.Contains((ey, ex))) continue;
+                    seen.Add((ey, ex));
+                    q.Enqueue((ey, ex));
+                }
+            }
+
+            int distanceY = Math.Abs(rootNode.Y - targetNode.Y);
+            char moveDirectionY = (rootNode.Y > targetNode.Y ? 'U' : 'D');
+            for (int i = 0; i < distanceY; i++)
+            {
+                field.Operate(new char[] { moveDirectionY, '.', });
+            }
+
+            int distanceX = Math.Abs(rootNode.X - targetNode.X);
+            char moveDirectionX = (rootNode.X > targetNode.X ? 'L' : 'R');
+            for (int i = 0; i < distanceX; i++)
+            {
+                field.Operate(new char[] { moveDirectionX, '.', });
+            }
+
+            field.Operate(new char[] { '.', 'P', });
+        }
 
         field.PrintLog();
     }
