@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Text;
-
 // using System.Text.Json;
 using static System.Console;
 
@@ -55,7 +54,6 @@ public static class SharedStopwatch
 
 public class Node
 {
-    // public Coord Coord { get; set; }
     public int Y { get; set; }
     public int X { get; set; }
     public int Id { get; set; }
@@ -65,7 +63,6 @@ public class Node
 
     public Node(int y, int x, int id, int? parentId, bool isFingertip, bool isGrabbed)
     {
-        // Coord = coord;
         Y = y;
         X = x;
         Id = id;
@@ -88,54 +85,39 @@ public class Node
 
 public class RobotArm
 {
-    private int _n;
-    private int _maxNodeCount;
-    private HashSet<int>[] _graph;
-    private HashSet<int>[] _subtree;
+    private Dictionary<int, HashSet<int>> _graph;
+    private Dictionary<int, HashSet<int>> _subtree;
     public List<Node> Nodes { get; private set; }
 
-    public RobotArm(int y, int x, int maxNodeCount, int n)
+    public RobotArm()
     {
-        if (maxNodeCount < 1)
-        {
-            throw new Exception("maxNodeCountは1以上の値にしてください");
-        }
-
-        if (y < 0 || y >= n || x < 0 || x >= n)
-        {
-            throw new Exception("rootCoordの値が不正です");
-        }
-
-        _n = n;
-        _maxNodeCount = maxNodeCount;
-        _graph = new HashSet<int>[maxNodeCount];
-        _subtree = new HashSet<int>[maxNodeCount];
-        for (int i = 0; i < maxNodeCount; i++)
-        {
-            _graph[i] = new();
-            _subtree[i] = new();
-        }
-        _subtree[0].Add(0);
-        Nodes = new() { new Node(y, x, 0, null, true, false), };
+        _graph = new();
+        _graph[0] = new();
+        _subtree = new();
+        _subtree[0] = new() { 0, };
+        Nodes = new() { new Node(0, 0, 0, null, true, false), };
     }
 
     public RobotArm DeepCopy()
     {
-        RobotArm copy = new RobotArm(Nodes[0].Y, Nodes[0].X, _maxNodeCount, _n);
+        RobotArm copy = new RobotArm();
 
+        copy.Nodes = new();
         foreach (var node in Nodes)
         {
             copy.Nodes.Add(new Node(node.Y, node.X, node.Id, node.ParentId, node.IsFingertip, node.IsGrabbed));
         }
 
-        for (int i = 0; i < _graph.Length; i++)
+        copy._graph = new();
+        foreach (var kvp in _graph)
         {
-            copy._graph[i] = new HashSet<int>(_graph[i]);
+            copy._graph[kvp.Key] = new HashSet<int>(kvp.Value);
         }
 
-        for (int i = 0; i < _subtree.Length; i++)
+        copy._subtree = new();
+        foreach (var kvp in _subtree)
         {
-            copy._subtree[i] = new HashSet<int>(_subtree[i]);
+            copy._subtree[kvp.Key] = new HashSet<int>(kvp.Value);
         }
 
         return copy;
@@ -143,19 +125,9 @@ public class RobotArm
 
     public void AddNode(int parentId, int length)
     {
-        if (Nodes.Count >= _maxNodeCount)
-        {
-            throw new Exception("maxNodeCountを超えて頂点を追加することはできません");
-        }
-
         if (parentId >= Nodes.Count)
         {
             throw new Exception($"親ノードとして指定した頂点{parentId}は存在しません");
-        }
-
-        if (length < 1 || length >= _n)
-        {
-            throw new Exception($"lengthの長さが不正です");
         }
 
         int id = Nodes.Count;
@@ -163,6 +135,7 @@ public class RobotArm
             Nodes[parentId].Y, Nodes[parentId].X + length, id, parentId, true, false
         ));
         Nodes[parentId].IsFingertip = false;
+        if (!_graph.ContainsKey(id)) _graph[id] = new();
         _graph[id].Add(parentId);
         _graph[parentId].Add(id);
 
@@ -171,89 +144,33 @@ public class RobotArm
         while (q.Count >= 1)
         {
             int cp = q.Dequeue();
+            if (!_subtree.ContainsKey(cp)) _subtree[cp] = new();
             _subtree[cp].Add(id);
             if (Nodes[cp].ParentId == null) break;
             q.Enqueue((int)Nodes[cp].ParentId!);
         }
     }
 
-    public bool CanMove(int dy, int dx)
+    public int GetNodeDistance(int id1, int id2)
     {
-        int ny = Nodes[0].Y + dy;
-        int nx = Nodes[0].X + dx;
-        return (0 <= ny && ny < _n && 0 <= nx && nx < _n);
+        return Math.Abs(Nodes[id1].Y - Nodes[id2].Y) + Math.Abs(Nodes[id1].X - Nodes[id2].X);
     }
 
-    public bool CanMove(char c)
-    {
-        switch (c)
-        {
-            case 'U':
-                return CanMove(-1, 0);
-            case 'D':
-                return CanMove(1, 0);
-            case 'L':
-                return CanMove(0, -1);
-            case 'R':
-                return CanMove(0, 1);
-            default:
-                throw new Exception("不正な命令です");
-        }
-    }
-
-    public void Move(int dy, int dx)
-    {
-        if (!CanMove(dy, dx))
-        {
-            throw new Exception("範囲外に移動しました");
-        }
-
-        foreach (var node in Nodes)
-        {
-            node.Y += dy;
-            node.X += dx;
-        }
-    }
-
-    public void Move(char c)
-    {
-        switch (c)
-        {
-            case 'U':
-                Move(-1, 0);
-                break;
-            case 'D':
-                Move(1, 0);
-                break;
-            case 'L':
-                Move(0, -1);
-                break;
-            case 'R':
-                Move(0, 1);
-                break;
-            default:
-                throw new Exception("不正な命令です");
-        }
-    }
-
-    private (int Ey, int Ex) RotatePoint(int py, int px, int cy, int cx, char c)
+    private (int Ey, int Ex) RotatePoint(int py, int px, int cy, int cx, bool isClockwise)
     {
         int ry = cy - py;
         int rx = cx - px;
 
         int dy, dx;
-        switch (c)
+        if (isClockwise)
         {
-            case 'L':
-                dy = -rx;
-                dx = ry;
-                break;
-            case 'R':
-                dy = rx;
-                dx = -ry;
-                break;
-            default:
-                throw new ArgumentException("不正な命令です");
+            dy = rx;
+            dx = -ry;
+        }
+        else
+        {
+            dy = -rx;
+            dx = ry;
         }
 
         int ey = py + dy;
@@ -261,24 +178,102 @@ public class RobotArm
         return (ey, ex);
     }
 
-    public void Rotate(int id, char c)
+    public bool CanRotate(int id, bool isClockwise)
     {
-        if (id < 1 || id >= Nodes.Count || Nodes[id].ParentId is null)
+        if (id < 0 || id >= Nodes.Count)
         {
-            throw new ArgumentException($"頂点{id}に親ノードが存在しません");
+            // throw new ArgumentException($"ノード{id}は存在しません");
+            return false;
         }
 
-        if (c != 'L' && c != 'R')
+        if (Nodes[id].ParentId is null)
         {
-            throw new ArgumentException("不正な命令です");
+            // throw new ArgumentException($"ノード{id}に親ノードが存在しません");
+            return false;
+        }
+
+        return true;
+    }
+
+    public void Rotate(int id, bool isClockwise)
+    {
+        if (!CanRotate(id, isClockwise))
+        {
+            throw new ArgumentException($"回転できません");
         }
 
         int py = Nodes[(int)Nodes[id].ParentId!].Y;
         int px = Nodes[(int)Nodes[id].ParentId!].X;
         foreach (int i in _subtree[id])
         {
-            (Nodes[i].Y, Nodes[i].X) = RotatePoint(py, px, Nodes[i].Y, Nodes[i].X, c);
+            (Nodes[i].Y, Nodes[i].X) = RotatePoint(py, px, Nodes[i].Y, Nodes[i].X, isClockwise);
         }
+    }
+
+    public bool CanGrab(int id)
+    {
+        if (id < 0 || id >= Nodes.Count)
+        {
+            // throw new Exception($"ノード{id}は存在しません");
+            return false;
+        }
+
+        if (!Nodes[id].IsFingertip)
+        {
+            // throw new Exception($"ノード{id}は指先ではありません");
+            return false;
+        }
+
+        if (Nodes[id].IsGrabbed)
+        {
+            // throw new Exception($"ノード{id}は既に掴んだ状態です");
+            return false;
+        }
+
+        return true;
+    }
+
+    public void Grab(int id)
+    {
+        if (!CanGrab(id))
+        {
+            throw new Exception("掴めません");
+        }
+
+        Nodes[id].IsGrabbed = true;
+    }
+
+    public bool CanPut(int id)
+    {
+        if (id < 0 || id >= Nodes.Count)
+        {
+            // throw new Exception($"ノード{id}は存在しません");
+            return false;
+        }
+
+        if (!Nodes[id].IsFingertip)
+        {
+            // throw new Exception($"ノード{id}は指先ではありません");
+            return false;
+        }
+
+        if (!Nodes[id].IsGrabbed)
+        {
+            // throw new Exception($"ノード{id}は置くものを持っていません");
+            return false;
+        }
+
+        return true;
+    }
+
+    public void Put(int id)
+    {
+        if (!CanPut(id))
+        {
+            throw new Exception($"置けません");
+        }
+
+        Nodes[id].IsGrabbed = false;
     }
 
     public override string ToString()
@@ -292,33 +287,317 @@ public class RobotArm
     }
 }
 
-// public class Field
-// {
-//     private int _n;
-//     public bool[,] Current { get; private set; }
-//     public RobotArm RobotArm { get; private set; }
+public class Field
+{
+    private int _n;
+    private bool[,] _current;
+    private HashSet<(int Y, int X)> _finished;
+    private HashSet<(int Y, int X)> _unfinished;
+    private readonly RobotArm _arm;
+    private int _armY;
+    private int _armX;
+    private readonly string _initLog;
+    private List<char[]> _log;
 
-//     public Field(int n, in bool[,] current, in RobotArm robotArm)
-//     {
-//         _n = n;
-//         Current = new bool[_n, _n];
-//         for (int i = 0; i < _n; i++)
-//         {
-//             for (int j = 0; j < _n; j++)
-//             {
-//                 Current[i, j] = current[i, j];
-//             }
-//         }
-//         RobotArm = robotArm.DeepCopy();
-//     }
-// }
+    public int Turn { get { return _log.Count; } }
+
+    public Field(int n, in bool[,] s, in bool[,] t, in RobotArm arm, int armY, int armX)
+    {
+        _n = n;
+
+        _current = new bool[_n, _n];
+        _finished = new();
+        _unfinished = new();
+
+        for (int i = 0; i < _n; i++)
+        {
+            for (int j = 0; j < _n; j++)
+            {
+                _current[i, j] = s[i, j];
+                if (t[i, j])
+                {
+                    if (_current[i, j])
+                    {
+                        _finished.Add((i, j));
+                    }
+                    else
+                    {
+                        _unfinished.Add((i, j));
+                    }
+                }
+            }
+        }
+
+        _arm = arm.DeepCopy();
+
+        if (armY < 0 || armY >= n || armX < 0 || armX >= n)
+        {
+            throw new Exception($"アームをフィールドの範囲外に配置しようとしました");
+        }
+        _armY = armY;
+        _armX = armX;
+
+        StringBuilder sb = new();
+        sb.AppendLine($"{_arm.Nodes.Count}");
+        for (int i = 1; i < _arm.Nodes.Count; i++)
+        {
+            sb.AppendLine($"{_arm.Nodes[i].ParentId} {_arm.GetNodeDistance(i, (int)_arm.Nodes[i].ParentId!)}");
+        }
+        sb.Append($"{_armY} {_armX}");
+        _initLog = sb.ToString();
+
+        _log = new();
+    }
+
+    public (int Y, int X) GetArmNodePosition(int id)
+    {
+        return (_armY + _arm.Nodes[id].Y, _armX + _arm.Nodes[id].X);
+    }
+
+    private bool CanMoveArm(int dy, int dx)
+    {
+        int ny = _armY + dy;
+        int nx = _armX + dx;
+        return (0 <= ny && ny < _n && 0 <= nx && nx < _n);
+    }
+
+    public bool CanMoveArm(char c)
+    {
+        switch (c)
+        {
+            case 'U':
+                return CanMoveArm(-1, 0);
+            case 'D':
+                return CanMoveArm(1, 0);
+            case 'L':
+                return CanMoveArm(0, -1);
+            case 'R':
+                return CanMoveArm(0, 1);
+            default:
+                throw new Exception("不正な命令です");
+        }
+    }
+
+    private void MoveArm(int dy, int dx)
+    {
+        if (!CanMoveArm(dy, dx))
+        {
+            throw new Exception("範囲外に移動しました");
+        }
+
+        _armY += dy;
+        _armX += dx;
+    }
+
+    private void MoveArm(char c)
+    {
+        switch (c)
+        {
+            case 'U':
+                MoveArm(-1, 0);
+                break;
+            case 'D':
+                MoveArm(1, 0);
+                break;
+            case 'L':
+                MoveArm(0, -1);
+                break;
+            case 'R':
+                MoveArm(0, 1);
+                break;
+            default:
+                throw new Exception("不正な命令です");
+        }
+    }
+
+    public bool CanRotateArm(int id, bool isClockwise)
+    {
+        return _arm.CanRotate(id, isClockwise);
+    }
+
+    private void RotateArm(int id, bool isClockwise)
+    {
+        if (!CanRotateArm(id, isClockwise))
+        {
+            throw new Exception($"ノード{id}の部分木を回転できません");
+        }
+
+        _arm.Rotate(id, isClockwise);
+    }
+
+    public bool CanGrabArm(int id)
+    {
+        (int y, int x) = GetArmNodePosition(id);
+
+        if (y < 0 || y >= _n || x < 0 || x >= _n)
+        {
+            // throw new Exception($"ノード{id}はフィールドの範囲外に存在します");
+            return false;
+        }
+
+        if (!_current[y, x])
+        {
+            // throw new Exception($"マス({y},{x})に掴めるものがありません");
+            return false;
+        }
+
+        return _arm.CanGrab(id);
+    }
+
+    private void GrabArm(int id)
+    {
+        if (!CanGrabArm(id))
+        {
+            throw new Exception($"ノード{id}でアイテムを掴めません");
+        }
+
+        (int y, int x) = GetArmNodePosition(id);
+        _arm.Grab(id);
+        _current[y, x] = false;
+        if (_finished.Contains((y, x)))
+        {
+            _finished.Remove((y, x));
+            _unfinished.Add((y, x));
+        }
+    }
+
+    public bool CanPutArm(int id)
+    {
+        (int y, int x) = GetArmNodePosition(id);
+
+        if (y < 0 || y >= _n || x < 0 || x >= _n)
+        {
+            // throw new Exception($"ノード{id}はフィールドの範囲外に存在します");
+            return false;
+        }
+
+        if (_current[y, x])
+        {
+            // throw new Exception($"マス({y},{x})には既にアイテムが存在します");
+            return false;
+        }
+
+        return _arm.CanPut(id);
+    }
+
+    private void PutArm(int id)
+    {
+        if (!CanPutArm(id))
+        {
+            throw new Exception($"ノード{id}はアイテムを置けません");
+        }
+
+        (int y, int x) = GetArmNodePosition(id);
+        _arm.Put(id);
+        _current[y, x] = true;
+        if (_unfinished.Contains((y, x)))
+        {
+            _unfinished.Remove((y, x));
+            _finished.Add((y, x));
+        }
+    }
+
+    public bool IsDone()
+    {
+        return _unfinished.Count == 0;
+    }
+
+    public void Operate(char[] operation)
+    {
+        MoveArm(operation[0]);
+
+        for (int i = 1; i < _arm.Nodes.Count; i++)
+        {
+            if (operation[i] != 'L' && operation[i] != 'R') continue;
+            RotateArm(i, (operation[i] == 'R' ? true : false));
+        }
+
+        for (int i = 0; i < _arm.Nodes.Count; i++)
+        {
+            if (operation[_arm.Nodes.Count + i] == 'P')
+            {
+                if (!_arm.Nodes[i].IsGrabbed)
+                {
+                    GrabArm(i);
+                }
+                else
+                {
+                    PutArm(i);
+                }
+            }
+        }
+
+        _log.Add(operation);
+    }
+
+    public override string ToString()
+    {
+        StringBuilder sb = new StringBuilder();
+
+        sb.AppendLine($"Turn: {Turn}");
+
+        sb.AppendLine("Current Field State (_current):");
+        for (int y = 0; y < _n; y++)
+        {
+            for (int x = 0; x < _n; x++)
+            {
+                sb.Append(_current[y, x] ? "1 " : "0 ");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Finished Cells (_finished):");
+        foreach (var (Y, X) in _finished)
+        {
+            sb.AppendLine($"({Y}, {X})");
+        }
+
+        sb.AppendLine("Unfinished Cells (_unfinished):");
+        foreach (var (Y, X) in _unfinished)
+        {
+            sb.AppendLine($"({Y}, {X})");
+        }
+
+        sb.AppendLine($"Robot Arm Position: ({_armY}, {_armX})");
+
+        sb.AppendLine($"Robot Arm:");
+        foreach (var node in _arm.Nodes)
+        {
+            sb.Append($"id: {node.Id} ");
+            sb.Append($"pid: {node.ParentId ?? -1} ");
+            sb.Append($"{GetArmNodePosition(node.Id)} ");
+            sb.Append($"IsFingertip: {node.IsFingertip} ");
+            sb.AppendLine($"IsGrabbed: {node.IsGrabbed}");
+        }
+
+        sb.AppendLine("Operation Log (_log):");
+        foreach (var operations in _log)
+        {
+            sb.AppendLine(new string(operations));
+        }
+
+        return sb.ToString();
+    }
+
+    public void PrintLog()
+    {
+        WriteLine(_initLog);
+        foreach (var l in _log)
+        {
+            foreach (char c in l)
+            {
+                Write(c);
+            }
+            WriteLine();
+        }
+    }
+}
 
 public class Program
 {
     private static int _n;
     private static int _m;
     private static int _v;
-
     private static bool[,] _s = new bool[0, 0];
     private static bool[,] _t = new bool[0, 0];
 
@@ -331,7 +610,7 @@ public class Program
     {
         SharedStopwatch.Start();
         Input();
-        Solve();
+        Sample();
     }
 
     public void Input()
@@ -361,35 +640,19 @@ public class Program
         }
     }
 
-    public void Solve()
+    public void Sample()
     {
-        // while (SharedStopwatch.ElapsedMilliseconds() <= 2900) ;
-        var robotArm = new RobotArm(0, 0, _v, _n);
-        robotArm.AddNode(0, 1);
-        robotArm.AddNode(1, 1);
-        robotArm.AddNode(1, 2);
-        WriteLine("turn0");
-        WriteLine(robotArm);
+        var arm = new RobotArm();
+        arm.AddNode(0, 1);
+        arm.AddNode(1, 1);
+        arm.AddNode(1, 2);
 
-        robotArm.Move('R');
-        robotArm.Rotate(1, 'R');
-        robotArm.Rotate(2, 'L');
-        WriteLine("turn1");
-        WriteLine(robotArm);
+        var field = new Field(_n, _s, _t, arm, 0, 0);
+        // field.Operate("RRL...PP".ToArray());
+        // field.Operate("R..R..P.".ToArray());
+        // field.Operate("DRR...P.".ToArray());
+        // field.Operate("D.....PP".ToArray());
 
-        robotArm.Move('R');
-        robotArm.Rotate(3, 'R');
-        WriteLine("turn2");
-        WriteLine(robotArm);
-
-        robotArm.Move('D');
-        robotArm.Rotate(1, 'R');
-        robotArm.Rotate(2, 'R');
-        WriteLine("turn3");
-        WriteLine(robotArm);
-
-        robotArm.Move('D');
-        WriteLine("turn4");
-        WriteLine(robotArm);
+        field.PrintLog();
     }
 }
