@@ -695,10 +695,126 @@ public class Program
     public Program()
     {
         SharedStopwatch.Start();
+
+        int n = 30;
+        VisualizeReachableCell(n, n / 2, n / 2, new int[] { 5, 1 });
+        WriteLine($"{SharedStopwatch.ElapsedMilliseconds()}ms");
+        return;
+
         Input();
 
         // Sample();
-        Greedy();
+        // Greedy();
+    }
+
+    public void VisualizeReachableCell(int n, int sy, int sx, in int[] cycle)
+    {
+        int[] dy = new int[] { -1, 0, 1, 0 };
+        int[] dx = new int[] { 0, 1, 0, -1 };
+
+        HashSet<int>[,] reachableCount = new HashSet<int>[n, n];
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = 0; j < n; j++)
+            {
+                reachableCount[i, j] = new();
+            }
+        }
+        reachableCount[sy, sx].Add(0);
+
+        int v = 1;
+        int maxT = 50;
+        int m = 0;
+
+        for (; v < maxT; v++)
+        {
+            for (int cy = 0; cy < n; cy++)
+            {
+                for (int cx = 0; cx < n; cx++)
+                {
+                    if (reachableCount[cy, cx].Contains(v - 1))
+                    {
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int ey = cy + dy[k] * cycle[(v - 1) % cycle.Length];
+                            int ex = cx + dx[k] * cycle[(v - 1) % cycle.Length];
+                            if (ey < 0 || ey >= n || ex < 0 || ex >= n) continue;
+                            reachableCount[ey, ex].Add(v);
+                        }
+                    }
+                }
+            }
+
+            m = 0;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    if (reachableCount[i, j].Contains(v))
+                    {
+                        m++;
+                    }
+                }
+            }
+
+            if (m >= n * n / 2)
+            {
+                break;
+            }
+        }
+
+        string dateStr = DateTime.Now.ToString("yyyyMMddHHmmss");
+        string dir = $"VisualizeReachableCell/{dateStr}";
+
+        for (int ct = 1; ct <= v; ct++)
+        {
+            StringBuilder sb = new();
+            // WriteLine($"{n} {m} {v}");
+            sb.AppendLine($"{n} {m} {v}");
+
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    // Write(reachableCount[i, j].Contains(ct) ? "1" : "0");
+                    sb.Append(reachableCount[i, j].Contains(ct) ? "1" : "0");
+                }
+                // WriteLine();
+                sb.AppendLine();
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    if (m >= 1)
+                    {
+                        // Write("1");
+                        sb.Append("1");
+                        m--;
+                    }
+                    else
+                    {
+                        // Write("0");
+                        sb.Append("0");
+                    }
+                }
+                // WriteLine();
+                sb.AppendLine();
+            }
+
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            // WriteLine($"filepath: {$"{dir}/{ct}.txt"}");
+            File.WriteAllText($"{dir}/{ct}.txt", sb.ToString());
+        }
+
+        StringBuilder sb2 = new();
+        sb2.AppendLine($"cycle: [{string.Join(',', cycle)}]");
+        File.WriteAllText($"{dir}/metadata.txt", sb2.ToString());
     }
 
     public void Input()
