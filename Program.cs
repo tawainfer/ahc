@@ -697,7 +697,7 @@ public class Program
         SharedStopwatch.Start();
 
         int n = 30;
-        VisualizeReachableCell(n, n / 2, n / 2, new int[] { 5, 1 });
+        VisualizeReachableCell(n, n / 2, n / 2, new int[] { 8, 4, 2, 1 });
         WriteLine($"{SharedStopwatch.ElapsedMilliseconds()}ms");
         return;
 
@@ -712,15 +712,17 @@ public class Program
         int[] dy = new int[] { -1, 0, 1, 0 };
         int[] dx = new int[] { 0, 1, 0, -1 };
 
-        HashSet<int>[,] reachableCount = new HashSet<int>[n, n];
-        for (int i = 0; i < n; i++)
-        {
-            for (int j = 0; j < n; j++)
-            {
-                reachableCount[i, j] = new();
-            }
-        }
-        reachableCount[sy, sx].Add(0);
+        // HashSet<int>[,] reachableCount = new HashSet<int>[n, n];
+        Dictionary<(int Y, int X), HashSet<int>> reachableCount = new();
+        // for (int i = 0; i < n; i++)
+        // {
+        //     for (int j = 0; j < n; j++)
+        //     {
+        //         reachableCount[i, j] = new();
+        //     }
+        // }
+        // reachableCount[sy, sx].Add(0);
+        reachableCount[(sy, sx)] = new() { 0, };
 
         int v = 1;
         int maxT = 50;
@@ -732,14 +734,20 @@ public class Program
             {
                 for (int cx = 0; cx < n; cx++)
                 {
-                    if (reachableCount[cy, cx].Contains(v - 1))
+                    // if (reachableCount[cy, cx].Contains(v - 1))
+                    if (reachableCount.ContainsKey((cy, cx)) && reachableCount[(cy, cx)].Contains(v - 1))
                     {
                         for (int k = 0; k < 4; k++)
                         {
                             int ey = cy + dy[k] * cycle[(v - 1) % cycle.Length];
                             int ex = cx + dx[k] * cycle[(v - 1) % cycle.Length];
                             if (ey < 0 || ey >= n || ex < 0 || ex >= n) continue;
-                            reachableCount[ey, ex].Add(v);
+                            // reachableCount[ey, ex].Add(v);
+                            if (!reachableCount.ContainsKey((ey, ex)))
+                            {
+                                reachableCount[(ey, ex)] = new();
+                            }
+                            reachableCount[(ey, ex)].Add(v);
                         }
                     }
                 }
@@ -750,7 +758,8 @@ public class Program
             {
                 for (int j = 0; j < n; j++)
                 {
-                    if (reachableCount[i, j].Contains(v))
+                    // if (reachableCount[i, j].Contains(v))
+                    if (reachableCount.ContainsKey((i, j)) && reachableCount[(i, j)].Contains(v))
                     {
                         m++;
                     }
@@ -777,7 +786,12 @@ public class Program
                 for (int j = 0; j < n; j++)
                 {
                     // Write(reachableCount[i, j].Contains(ct) ? "1" : "0");
-                    sb.Append(reachableCount[i, j].Contains(ct) ? "1" : "0");
+                    // sb.Append(reachableCount[i, j].Contains(ct) ? "1" : "0");
+                    sb.Append(
+                        reachableCount.ContainsKey((i, j)) && reachableCount[(i, j)].Contains(ct)
+                            ? "1"
+                            : "0"
+                    );
                 }
                 // WriteLine();
                 sb.AppendLine();
@@ -787,11 +801,10 @@ public class Program
             {
                 for (int j = 0; j < n; j++)
                 {
-                    if (m >= 1)
+                    if (i * n + j < m)
                     {
                         // Write("1");
                         sb.Append("1");
-                        m--;
                     }
                     else
                     {
