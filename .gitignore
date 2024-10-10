@@ -3,7 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-VisualizeReachableCell
+/out
+/tools/target/
+/tools/vis.html
+/VisualizeReachableCell
 
 # dotenv files
 .env
