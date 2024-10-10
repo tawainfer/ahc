@@ -3203,7 +3203,7 @@ public class Field
 
     public bool Operate(char[] operation)
     {
-        if (operation.Count(c => (c != '.')) == 0)
+        if (operation.All(c => (c == '.')))
         {
             return false;
         }
@@ -3231,38 +3231,84 @@ public class Field
             }
         }
 
-        if (operation.All(c => c == '.' || c == 'P') && _log.Count >= 1)
-        {
-            bool canCompress = true;
-            for (int i = 0; i < operation.Length; i++)
-            {
-                if (_log.Last()[i] != '.' && operation[i] == 'P')
-                {
-                    canCompress = false;
-                    break;
-                }
-            }
-
-            if (canCompress)
-            {
-                for (int i = 0; i < operation.Length; i++)
-                {
-                    if (operation[i] == 'P')
-                    {
-                        _log.Last()[i] = operation[i];
-                    }
-                }
-                return true;
-            }
-        }
-
-        _log.Add(operation);
+        AddLog(operation);
         return true;
     }
 
     public bool Operate(string operation)
     {
         return Operate(operation.ToArray());
+    }
+
+    private void AddLog(char[] log)
+    {
+        if (log.Length != 2 * _arm.NodeCount)
+        {
+            throw new Exception("操作列の長さが不正です");
+        }
+
+        _log.Add(log);
+        CompressLog();
+    }
+
+    private void AddLog(string log)
+    {
+        AddLog(log.ToArray());
+    }
+
+    private int CompressLog()
+    {
+        int compressedTurn = 0;
+
+        while (_log.Count >= 2)
+        {
+            if (_log[^1].All(c => (c == '.')))
+            {
+                _log.RemoveAt(_log.Count - 1);
+                compressedTurn++;
+                continue;
+            }
+
+            if (_log[^2].Any(c => (c == 'P'))
+                && _log[^1].Any(c => (c != '.' && c != 'P'))) break;
+
+            bool canCompress = true;
+            for (int i = 0; i < _log[^1].Length; i++)
+            {
+                if (_log[^2][i] != '.' && _log[^1][i] != '.')
+                {
+                    canCompress = false;
+                    break;
+                }
+            }
+
+            if (!canCompress) break;
+            for (int i = 0; i < _log[^1].Length; i++)
+            {
+                if (_log[^1][i] != '.')
+                {
+                    _log[^2][i] = _log[^1][i];
+                }
+            }
+
+            _log.RemoveAt(_log.Count - 1);
+            compressedTurn++;
+        }
+
+        return compressedTurn;
+    }
+
+    public void PrintLog()
+    {
+        WriteLine(_initLog);
+        foreach (var l in _log)
+        {
+            foreach (char c in l)
+            {
+                Write(c);
+            }
+            WriteLine();
+        }
     }
 
     public override string ToString()
@@ -3325,19 +3371,6 @@ public class Field
         }
 
         return sb.ToString();
-    }
-
-    public void PrintLog()
-    {
-        WriteLine(_initLog);
-        foreach (var l in _log)
-        {
-            foreach (char c in l)
-            {
-                Write(c);
-            }
-            WriteLine();
-        }
     }
 }
 

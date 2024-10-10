@@ -14,7 +14,7 @@ then
   testcase=$1
 fi
 
-dotnet publish -c Test
+dotnet publish -c Release
 if [ $? -ne 0 ]; then
   exit 1
 fi
