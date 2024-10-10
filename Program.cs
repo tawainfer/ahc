@@ -3231,6 +3231,31 @@ public class Field
             }
         }
 
+        if (operation.All(c => c == '.' || c == 'P') && _log.Count >= 1)
+        {
+            bool canCompress = true;
+            for (int i = 0; i < operation.Length; i++)
+            {
+                if (_log.Last()[i] != '.' && operation[i] == 'P')
+                {
+                    canCompress = false;
+                    break;
+                }
+            }
+
+            if (canCompress)
+            {
+                for (int i = 0; i < operation.Length; i++)
+                {
+                    if (operation[i] == 'P')
+                    {
+                        _log.Last()[i] = operation[i];
+                    }
+                }
+                return true;
+            }
+        }
+
         _log.Add(operation);
         return true;
     }
