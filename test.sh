@@ -47,7 +47,7 @@ do
 
   count=$((count + 1))
   echo "${file} (${count}/${testcase})"
-  python input.py "${file}" | './bin/Test/net7.0/linux-x64/publish/ahc038' > "./out/${result_dir}/${file}"
+  python input.py "${file}" | './bin/Release/net7.0/linux-x64/publish/ahc038' > "./out/${result_dir}/${file}"
 
   cd tools
   cargo run --quiet --bin vis "../in/${file}" "../out/${result_dir}/${file}"

@@ -1,8 +1,5 @@
-﻿using System.Buffers;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
-using System.Timers;
-
 // using System.Text.Json;
 using static System.Console;
 
@@ -3758,8 +3755,10 @@ public class Program
             { '.', '.', 'R', '.' },
         };
 
-        bool isNodeCountFive = _v <= 5 || _n <= 16;
+        // アームの設計
+        // ノード数を参考に2の累乗の降順で辺の長さを決定していく
 
+        bool isNodeCountFive = _v <= 5 || _n <= 16;
         var arm = new RobotArm();
         arm.SetRootPosition(_n / 2, _n / 2);
 
@@ -3770,16 +3769,17 @@ public class Program
             b /= 2;
         }
 
+        // 事前に計算して文字列化した到達可能なセルのデータを読み込む
         StaticData.ParseReachableCellData(isNodeCountFive);
 
+        // 全てのたこ焼きが揃うまで貪欲
         var field = new Field(_n, _s, _t, arm);
-        // WriteLine(field);
-
         while (!field.IsDone() && SharedStopwatch.ElapsedMilliseconds() <= 2900)
         {
             var root = field[0];
             var fingertip = field[arm.NodeCount - 1];
 
+            // 指先が現在の位置でP操作を行えるなら実行する
             if (0 <= fingertip.Y && fingertip.Y < field.N
                 && 0 <= fingertip.X && fingertip.X < field.N
                 && (
@@ -3788,33 +3788,28 @@ public class Program
                 ))
             {
                 char[] operation0 = new string('.', 2 * arm.NodeCount).ToArray();
-                operation0[operation0.Length - 1] = 'P';
+                operation0[^1] = 'P';
                 field.Operate(operation0);
 
                 continue;
             }
 
+            // 移動せず回転操作だけでP操作が実行可能になるか確認する
+            // 180度回転(2ターン)より90度回転(1ターン)で行けるマスを優先する
             (int Y, int X) target = (int.MinValue, int.MinValue);
             var targetCandidate = (fingertip.IsGrabbed
                 ? field.GetCategorizedCell(false, true)
                 : field.GetCategorizedCell(true, false));
+            char[]? rotateOperation1 = new String('.', arm.NodeCount - 1).ToArray();
+            char[]? rotateOperation2 = new String('.', arm.NodeCount - 1).ToArray();
+
             foreach (var candidate in targetCandidate)
             {
                 int relativeTargetY = candidate.Y - root.Y;
                 int relativeTargetX = candidate.X - root.X;
-                if (StaticData.CellToRotatePatterns.ContainsKey((relativeTargetY, relativeTargetX)))
-                {
-                    target = (relativeTargetY, relativeTargetX);
-                    break;
-                }
-            }
+                if (!StaticData.CellToRotatePatterns.ContainsKey((relativeTargetY, relativeTargetX))) continue;
 
-            if (target.Y != int.MinValue)
-            {
-                char[] operation1 = new String('.', 2 * arm.NodeCount).ToArray();
-                char[] operation2 = new String('.', 2 * arm.NodeCount).ToArray();
-
-                int[] rotatePatterns = StaticData.CellToRotatePatterns[(target.Y, target.X)];
+                int[] rotatePatterns = StaticData.CellToRotatePatterns[(relativeTargetY, relativeTargetX)];
                 for (int i = 1; i < arm.NodeCount; i++)
                 {
                     int pattern = 0;
@@ -3826,8 +3821,23 @@ public class Program
                         checkPattern = (checkPattern + 1) % 4;
                     }
 
-                    operation1[i] = ptn[0, pattern];
-                    operation2[i] = ptn[1, pattern];
+                    rotateOperation1[i - 1] = ptn[0, pattern];
+                    rotateOperation2[i - 1] = ptn[1, pattern];
+                }
+
+                target = (relativeTargetY, relativeTargetX);
+                if (rotateOperation2.All(c => (c == '.'))) break;
+            }
+
+            // `移動せず回転操作だけでP操作が実行可能になるならその操作を実行する
+            if (target.Y != int.MinValue)
+            {
+                char[] operation1 = new String('.', 2 * arm.NodeCount).ToArray();
+                char[] operation2 = new String('.', 2 * arm.NodeCount).ToArray();
+                for (int i = 1; i < arm.NodeCount; i++)
+                {
+                    operation1[i] = rotateOperation1[i - 1];
+                    operation2[i] = rotateOperation2[i - 1];
                 }
 
                 field.Operate(operation1);
@@ -3836,6 +3846,8 @@ public class Program
                 continue;
             }
 
+            // 1ターンの回転操作だけではP操作が実行不可のときアーム全体を移動させる
+            // P操作ができるマスで一番移動距離の小さいものを選び、近づくように移動方向を選択する
             int minDistance = int.MaxValue;
             foreach (var candidate in targetCandidate)
             {
