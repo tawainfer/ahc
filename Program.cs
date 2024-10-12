@@ -3198,7 +3198,7 @@ public class Field
         return _categorizedCell[(false, true)].Count == 0;
     }
 
-    public bool Operate(char[] operation)
+    public bool Operate(in char[] operation)
     {
         if (operation.All(c => (c == '.')))
         {
@@ -3237,14 +3237,15 @@ public class Field
         return Operate(operation.ToArray());
     }
 
-    private void AddLog(char[] log)
+    private void AddLog(in char[] log)
     {
         if (log.Length != 2 * _arm.NodeCount)
         {
             throw new Exception("操作列の長さが不正です");
         }
 
-        _log.Add(log);
+        // _log.Add(log);
+        _log.Add((char[])log.Clone());
         CompressLog();
     }
 
@@ -3403,7 +3404,8 @@ public class Program
 
         // Sample();
         // Greedy();
-        Greedy2();
+        // Greedy2();
+        Greedy3();
     }
 
     public void WriteReachableCell()
@@ -3757,7 +3759,6 @@ public class Program
 
         // アームの設計
         // ノード数を参考に2の累乗の降順で辺の長さを決定していく
-
         bool isNodeCountFive = _v <= 5 || _n <= 16;
         var arm = new RobotArm();
         arm.SetRootPosition(_n / 2, _n / 2);
@@ -3780,12 +3781,17 @@ public class Program
             var fingertip = field[arm.NodeCount - 1];
 
             // 指先が現在の位置でP操作を行えるなら実行する
-            if (0 <= fingertip.Y && fingertip.Y < field.N
-                && 0 <= fingertip.X && fingertip.X < field.N
-                && (
-                    (fingertip.IsGrabbed && !field[fingertip.Y, fingertip.X].ItemExists && field[fingertip.Y, fingertip.X].IsDestination)
-                    || (!fingertip.IsGrabbed && field[fingertip.Y, fingertip.X].ItemExists && !field[fingertip.Y, fingertip.X].IsDestination)
-                ))
+            if ((
+                    fingertip.IsGrabbed
+                    && field.CanPutArm(arm.NodeCount - 1)
+                    && !field[fingertip.Y, fingertip.X].ItemExists
+                    && field[fingertip.Y, fingertip.X].IsDestination
+                ) || (
+                    !fingertip.IsGrabbed
+                    && field.CanGrabArm(arm.NodeCount - 1)
+                    && field[fingertip.Y, fingertip.X].ItemExists
+                    && !field[fingertip.Y, fingertip.X].IsDestination
+            ))
             {
                 char[] operation0 = new string('.', 2 * arm.NodeCount).ToArray();
                 operation0[^1] = 'P';
@@ -3867,6 +3873,208 @@ public class Program
             else if (target.Y > 0) operation[0] = 'D';
             else if (target.X < 0) operation[0] = 'L';
             else operation[0] = 'R';
+            field.Operate(operation);
+        }
+
+        // WriteLine(field);
+        field.PrintLog();
+    }
+
+    public void Greedy3()
+    {
+        int[] dy = new int[] { -1, 0, 1, 0 };
+        int[] dx = new int[] { 0, 1, 0, -1 };
+        char[,] ptn = {
+            { '.', 'R', 'R', 'L' },
+            { '.', '.', 'R', '.' },
+        };
+
+        // アームの設計
+        // 最初に5,6個のノードを使って設計する
+        // 辺の長さは2の累乗の降順で順番に繋げていく
+        // ノードが余るなら根から一番離れた関節点に適当な長さで指先を増やしていく
+        bool isBasicNodeCountFive = _v <= 5 || _n <= 16;
+        int mainNodeCount = (isBasicNodeCountFive ? 5 : 6);
+        var arm = new RobotArm();
+        arm.SetRootPosition(_n / 2, _n / 2);
+
+        int b = (isBasicNodeCountFive ? 8 : 16);
+        for (int i = 1; i < mainNodeCount; i++)
+        {
+            arm.AddNode(i - 1, b);
+            b /= 2;
+        }
+
+        for (int i = 0; i < _v - mainNodeCount; i++)
+        {
+            arm.AddNode(mainNodeCount - 2, i + 2);
+        }
+
+        // 事前に計算して文字列化した到達可能なセルのデータを読み込む
+        StaticData.ParseReachableCellData(isBasicNodeCountFive);
+
+        // 全てのたこ焼きが揃うまで貪欲
+        var field = new Field(_n, _s, _t, arm);
+        // WriteLine(field);
+
+        while (!field.IsDone() && SharedStopwatch.ElapsedMilliseconds() <= 2900)
+        {
+            var root = field[0];
+            var mainFingertip = field[isBasicNodeCountFive ? 4 : 5];
+
+            // メインの指先で掴めるたこ焼きが無くなってもゲームが終了しない
+            // = 他の指先で掴んでいて置けずにいるたこ焼きがある
+            // 適当に空いているマスに置いてメインの指先で掴み直す
+            if (!mainFingertip.IsGrabbed
+                && field.GetCategorizedCell(true, false).Count == 0)
+            {
+                // たこ焼きを掴んだままの指先を見つける
+                int subFingertipId = -1;
+                for (int i = mainNodeCount; i < arm.NodeCount; i++)
+                {
+                    if (field[i].IsGrabbed)
+                    {
+                        subFingertipId = field[i].Id;
+                        break;
+                    }
+                }
+
+                // 適当なノードを回転させながら空いているマスを見つける
+                char[] operation0 = new string('.', 2 * arm.NodeCount).ToArray();
+                int index = 0;
+                while (!field.CanPutArm(subFingertipId)
+                    && SharedStopwatch.ElapsedMilliseconds() <= 2900)
+                {
+                    int id = (index == 0 ? subFingertipId : index);
+                    operation0[id] = (new Random().Next(2) == 0 ? 'L' : 'R');
+                    field.Operate(operation0);
+                    operation0[id] = '.';
+                    index = (index + 1) % (mainNodeCount - 1);
+                }
+
+                operation0[arm.NodeCount + subFingertipId] = 'P';
+                field.Operate(operation0);
+                continue;
+            }
+
+            // メインの指先が現在の位置でP操作を行えるなら実行する
+            // サブの指先でもP操作が出来そうなら一緒に行う
+            if ((
+                    mainFingertip.IsGrabbed
+                    && field.CanPutArm(mainNodeCount - 1)
+                    && !field[mainFingertip.Y, mainFingertip.X].ItemExists
+                    && field[mainFingertip.Y, mainFingertip.X].IsDestination
+                ) || (
+                    !mainFingertip.IsGrabbed
+                    && field.CanGrabArm(mainNodeCount - 1)
+                    && field[mainFingertip.Y, mainFingertip.X].ItemExists
+                    && !field[mainFingertip.Y, mainFingertip.X].IsDestination
+            ))
+            {
+                char[] operation0 = new string('.', 2 * arm.NodeCount).ToArray();
+                operation0[arm.NodeCount + mainNodeCount - 1] = 'P';
+                field.Operate(operation0);
+                operation0[arm.NodeCount + mainNodeCount - 1] = '.';
+
+                for (int i = mainNodeCount; i < arm.NodeCount; i++)
+                {
+                    var subFingertip = field[i];
+                    if ((
+                            subFingertip.IsGrabbed
+                            && field.CanPutArm(i)
+                            && !field[subFingertip.Y, subFingertip.X].ItemExists
+                            && field[subFingertip.Y, subFingertip.X].IsDestination
+                        ) || (
+                            !subFingertip.IsGrabbed
+                            && field.CanGrabArm(i)
+                            && field[subFingertip.Y, subFingertip.X].ItemExists
+                            && !field[subFingertip.Y, subFingertip.X].IsDestination
+                    ))
+                    {
+                        operation0[arm.NodeCount + i] = 'P';
+                        field.Operate(operation0);
+                        operation0[arm.NodeCount + i] = '.';
+                    }
+                }
+
+                continue;
+            }
+
+            // 移動せず回転操作だけでP操作が実行可能になるか確認する
+            // 180度回転(2ターン)より90度回転(1ターン)で行けるマスを優先する
+            (int Y, int X) target = (int.MinValue, int.MinValue);
+            var targetCandidate = (mainFingertip.IsGrabbed
+                ? field.GetCategorizedCell(false, true)
+                : field.GetCategorizedCell(true, false));
+            char[]? rotateOperation1 = new String('.', arm.NodeCount - 1).ToArray();
+            char[]? rotateOperation2 = new String('.', arm.NodeCount - 1).ToArray();
+
+            foreach (var candidate in targetCandidate)
+            {
+                int relativeTargetY = candidate.Y - root.Y;
+                int relativeTargetX = candidate.X - root.X;
+                if (!StaticData.CellToRotatePatterns.ContainsKey((relativeTargetY, relativeTargetX))) continue;
+
+                int[] rotatePatterns = StaticData.CellToRotatePatterns[(relativeTargetY, relativeTargetX)];
+                for (int i = 1; i < mainNodeCount; i++)
+                {
+                    int pattern = 0;
+                    int checkPattern = field[i].RotatePattern;
+
+                    while (checkPattern != rotatePatterns[i - 1])
+                    {
+                        pattern++;
+                        checkPattern = (checkPattern + 1) % 4;
+                    }
+
+                    rotateOperation1[i - 1] = ptn[0, pattern];
+                    rotateOperation2[i - 1] = ptn[1, pattern];
+                }
+
+                target = (relativeTargetY, relativeTargetX);
+                if (rotateOperation2.All(c => (c == '.'))) break;
+            }
+
+            // 移動せず回転操作だけでP操作が実行可能だった場合
+            // メインのノードの回転操作を実行する
+            if (target.Y != int.MinValue)
+            {
+                char[] operation1 = new String('.', 2 * arm.NodeCount).ToArray();
+                char[] operation2 = new String('.', 2 * arm.NodeCount).ToArray();
+                for (int i = 1; i < mainNodeCount; i++)
+                {
+                    operation1[i] = rotateOperation1[i - 1];
+                    operation2[i] = rotateOperation2[i - 1];
+                }
+
+                field.Operate(operation1);
+                field.Operate(operation2);
+
+                continue;
+            }
+
+            // 1ターンの回転操作だけではP操作が実行不可のときアーム全体を移動させる
+            // P操作ができるマスで一番移動距離の小さいものを選び、近づくように移動方向を選択する
+            int minDistance = int.MaxValue;
+            foreach (var candidate in targetCandidate)
+            {
+                int relativeTargetY = candidate.Y - root.Y;
+                int relativeTargetX = candidate.X - root.X;
+                int distance = relativeTargetY + relativeTargetX;
+
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    target = (relativeTargetY, relativeTargetX);
+                }
+            }
+
+            char[] operation = new String('.', 2 * arm.NodeCount).ToArray();
+            if (target.Y < 0) operation[0] = 'U';
+            else if (target.Y > 0) operation[0] = 'D';
+            else if (target.X < 0) operation[0] = 'L';
+            else operation[0] = 'R';
+
             field.Operate(operation);
         }
 
