@@ -2,6 +2,7 @@
 using namespace std;
 typedef long long ll;
 const ll INF = 2e18;
+const mt19937 rng(static_cast<unsigned>(time(0)));
 
 struct Drink {
     ll Sweetness;
@@ -39,21 +40,42 @@ struct DrinkHash {
 //     chrono::high_resolution_clock::time_poll start;
 // };
 
+class TimeKeeper {
+private:
+    chrono::high_resolution_clock::time_point _startTime;
+    int64_t _timeThreshold;
+public:
+    TimeKeeper(const int64_t &timeThreshold) : _startTime(chrono::high_resolution_clock::now()), _timeThreshold(timeThreshold) {
+    }
+
+    bool IsTimeOver() {
+        using chrono::duration_cast;
+        using chrono::milliseconds;
+        auto diff = chrono::high_resolution_clock::now() - this->_startTime;
+        return duration_cast<milliseconds>(diff).count() >= _timeThreshold;
+    }
+};
+
 class Factory {
 private:
     deque<Drink> _finishedList;
     unordered_set<Drink, DrinkHash> _finishedSet;
     deque<Drink> _unfinishedList;
     unordered_set<Drink, DrinkHash> _unfinishedSet;
-    ll _totalCost;
+    multiset<ll> _multisetA;
+    multiset<ll> _multisetB;
+    ll _totalCost = 0;
+    ll _firstAction = -1;
     vector<pair<Drink, Drink>> _logs;
 
 public:
     Factory(ll n, const vector<ll> &a, const vector<ll> &b) : _totalCost(0) {
         _finishedSet.insert(Drink(0, 0));
 
-        for (ll i = 0; i < n; ++i) {
+        for (ll i = 0; i < n; i++) {
             _unfinishedSet.insert(Drink(a[i], b[i]));
+            _multisetA.insert(a[i]);
+            _multisetB.insert(b[i]);
         }
 
         if (_unfinishedSet.count(Drink(0, 0))) {
@@ -63,6 +85,10 @@ public:
         _finishedList.assign(_finishedSet.begin(), _finishedSet.end());
         _unfinishedList.assign(_unfinishedSet.begin(), _unfinishedSet.end());
         sort(_unfinishedList.begin(), _unfinishedList.end());
+    }
+
+    bool operator<(const Factory& other) const {
+        return _totalCost < other._totalCost;
     }
 
     bool IsDone() {
@@ -91,9 +117,30 @@ public:
         _totalCost += CalcCost(baseDrink, newDrink);
         _finishedList.push_back(newDrink);
         _finishedSet.insert(newDrink);
-        _unfinishedSet.erase(newDrink);
-        _unfinishedList.erase(find(_unfinishedList.begin(), _unfinishedList.end(), newDrink));
+        if(_unfinishedSet.find(newDrink) != _unfinishedSet.end()) {
+            _unfinishedSet.erase(newDrink);
+            _unfinishedList.erase(find(_unfinishedList.begin(), _unfinishedList.end(), newDrink));
+        }
+        if(_multisetA.find(newDrink.Sweetness) != _multisetA.end()) _multisetA.erase(_multisetA.find(newDrink.Sweetness));
+        if(_multisetB.find(newDrink.Fizzy) != _multisetB.end()) _multisetB.erase(_multisetB.find(newDrink.Fizzy));
         _logs.push_back(make_pair(baseDrink, newDrink));
+    }
+
+    bool ReplenishSupportDrink() {
+        if(IsDone()) return false;
+
+        if(_multisetA.empty() || _multisetB.empty()) return false;
+
+        Drink newDrink(*_multisetA.begin(), *_multisetB.begin());
+        Drink baseDrink(0, 0);
+        for(auto candidateDrink : _finishedSet) {
+            if(CalcCost(candidateDrink, newDrink) < CalcCost(baseDrink, newDrink)) {
+                baseDrink = candidateDrink;
+            }
+        }
+        MakeNewDrink(baseDrink, newDrink);
+
+        return true;
     }
 
     bool SimpleAction() {
@@ -116,18 +163,62 @@ public:
                 baseDrink = candidateDrink;
             }
         }
-
         MakeNewDrink(baseDrink, newDrink);
 
         return true;
     }
 
-    void Prll() {
+    bool ChokudaiSearchAction(ll beamWidth, ll beamDepth, ll beamNumber) {
+        auto beam = vector<priority_queue<Factory>>(beamDepth + 1);
+        for(int t = 0; t <= beamDepth; t++) beam[t] = priority_queue<Factory>();
+        beam[0].push(*this);
+
+        for(int cnt = 0; cnt < beamNumber; cnt++) {
+            for(int t = 0; t < beamDepth; t++) {
+                auto &nowBeam = beam[t];
+                auto &nextBeam = beam[t + 1];
+                for(int i = 0; i < beamWidth; i++) {
+                    if(nowBeam.empty()) break;
+                    Factory nowState = nowBeam.top();
+                    if(nowState.IsDone()) break;
+                    nowBeam.pop();
+                    
+                    for(int action = 0; action < 3; action++) {
+                        Factory nextState = nowState;
+                        if(action == 1) nextState.ReplenishSupportDrink();
+                        nextState.SimpleAction2();
+                        if(action == 2) nextState.ReplenishSupportDrink();
+                        
+                        if(t == 0) nextState._firstAction = action;
+                        nextBeam.push(nextState);
+                    }
+                }
+            }
+        }
+
+        for(int t = beamDepth; t >= 0; t--) {
+            const auto &nowBeam = beam[t];
+            if(!nowBeam.empty()) {
+                if(nowBeam.top()._firstAction == 1) ReplenishSupportDrink();
+                SimpleAction2();
+                if(nowBeam.top()._firstAction == 2) ReplenishSupportDrink();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void Print() {
         cout << _logs.size() << endl;
         for (const auto &log : _logs) {
             cout << log.first.Sweetness << " " << log.first.Fizzy << " "
                 << log.second.Sweetness << " " << log.second.Fizzy << endl;
         }
+    }
+
+    ll GetTotalCost() {
+        return _totalCost;
     }
 };
 
@@ -145,12 +236,18 @@ int main() {
 
     Factory factory(n, a, b);
 
+    auto timeKeeper = TimeKeeper(1900);
+    while(!factory.IsDone() && !timeKeeper.IsTimeOver()) {
+        factory.ChokudaiSearchAction(5, 10, 1);
+    }
+
     while (!factory.IsDone()) {
-        // factory.SimpleAction();
+        factory.ReplenishSupportDrink();
         factory.SimpleAction2();
     }
 
-    factory.Prll();
+    factory.Print();
+    // cout << factory.GetTotalCost() << endl;
 
     return 0;
 }
