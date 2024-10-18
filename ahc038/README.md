@@ -48,7 +48,7 @@ seed: 16 score: 286
 
   ( $N = 45,$ 赤枠が $N = 31$ )
 
-  ![visualizeCell.gif](/images/visualizeCell.gif)
+  ![visualizeCell.gif](images/visualizeCell.gif)
 
   <br>
 
