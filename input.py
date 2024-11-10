@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
   x = list()
   y = list()
-  for _ in range(n):
+  for _ in range(2 * n):
     a, b = map(int, read_line().split())
     x.append(a)
     y.append(b)
