@@ -31,6 +31,3 @@ if __name__ == '__main__':
     x.append(a)
     y.append(b)
     print(a, b)
-
-  for _ in range(2 * n):
-    print(read_line())
